@@ -22,16 +22,23 @@ class ServerManager:
     async def initialize(self):
         """Initialize the server connection"""
         try:
+            # Try to ping or get system info first to verify connection
             await self.server.connect()
+            # info = await self.server.SystemInfo()
+            print("Server connected successfully:", info)
             return self.server
         except Exception as e:
             print(f"Failed to initialize server: {e}")
+            print("Please verify the server is running at:", self.address)
             raise
         
     async def cleanup(self):
         """Clean up server resources"""
         try:
-            await self.server.close()
+            if hasattr(self.server, '_session'):
+                await self.server._session.close()
+            if hasattr(self.server, '_connector'):
+                await self.server._connector.close()
         except Exception as e:
             print(f"Error during cleanup: {e}")
 
@@ -105,13 +112,13 @@ class ServerManager:
         except Exception as e:
             print(f"Error resetting motor: {e}")
 
-    async def get_system_info(self):
-        """Get system information"""
-        try:
-            return await self.server.SystemInfo()
-        except Exception as e:
-            print(f"Error getting system info: {e}")
-            return {}
+    # async def get_system_info(self):
+    #     """Get system information"""
+    #     try:
+    #         return await self.server.SystemInfo()
+    #     except Exception as e:
+    #         print(f"Error getting system info: {e}")
+    #         return {}
         
     # Utility methods for image handling
     def create_text_image(self, text, size=(240, 240), offset=(0, 0), 

@@ -6,23 +6,47 @@ from serverManager import ServerManager
 import asyncio
 
 async def main():
-    serverManager = ServerManager()
-    displayManager = ManageDisplay(server_manger=serverManager)
-    display = DisplayModule(display_manager=displayManager)  
-    player = AudioPlayer(display)
-    display.set_player_for_display(player)
-    
     try:
-        # Play trigger with logo
-        await player.play_trigger_with_logo("trigger.wav", "logo.png")
+        # Initialize server manager
+        serverManager = ServerManager()
+        await serverManager.initialize()
         
-        # Play audio with GIF
-        await player.sync_audio_and_gif("audio.wav", "speakingGif.gif")
+        # Initialize display components
+        displayManager = ManageDisplay(server_manger=serverManager)
+        display = DisplayModule(display_manager=displayManager)  
         
-    except KeyboardInterrupt:
-        player.stop_playback()
+        # Initialize audio
+        player = AudioPlayer(display)
+        
+        if not hasattr(player, 'audio_available') or not player.audio_available:
+            print("Warning: Audio not available. Continuing with display only.")
+        
+        try:
+            # Your main logic here
+            await player.play_trigger_with_logo("trigger.wav", "logo.png")
+            await player.sync_audio_and_gif("audio.wav", "speakingGif.gif")
+            
+        except KeyboardInterrupt:
+            print("\nStopping playback...")
+            player.stop_playback()
+            
+        except Exception as e:
+            print(f"Error during playback: {e}")
+            
+    except Exception as e:
+        print(f"Error in main: {e}")
+        
     finally:
-        await display.cleanup_display()
+        # Cleanup
+        try:
+            await display.cleanup_display()
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nProgram terminated by user")
+    except Exception as e:
+        print(f"Fatal error: {e}")

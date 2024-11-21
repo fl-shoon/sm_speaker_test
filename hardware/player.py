@@ -24,12 +24,28 @@ def suppress_stdout_stderr():
 class AudioPlayer:
     def __init__(self, display):
         self.display = display
+        self.display.set_player_for_display(self)  
         self.playback_active = False
+        
+        # Set environment variables
         os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
-        with suppress_stdout_stderr():
-            pygame.init()
-            mixer.init()
-        self.current_volume = 0.5
+        os.environ['SDL_AUDIODRIVER'] = 'alsa'  
+        
+        try:
+            with suppress_stdout_stderr():
+                pygame.init()
+                mixer.init(frequency=44100, size=-16, channels=2, buffer=4096)
+                
+            # Test audio
+            self.current_volume = 0.5
+            mixer.music.set_volume(self.current_volume)
+            
+        except Exception as e:
+            print(f"Warning: Audio initialization failed: {e}")
+            print("Audio playback will be disabled")
+            self.audio_available = False
+        else:
+            self.audio_available = True
 
     def set_audio_volume(self, volume):
         """Set audio volume between 0.0 and 1.0"""
