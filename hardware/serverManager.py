@@ -6,7 +6,7 @@ import subprocess
 class ServerManager:
     def __init__(self, address=None):
         if address is None:
-            self.address = "http://192.168.2.1:8080" 
+            self.address = "http://192.168.2.1:8080"  
         else:
             self.address = address
         
@@ -16,27 +16,19 @@ class ServerManager:
             print("Warning: Default font not found. Some text rendering features may not work.")
             self.font = None
 
-        self.server = Server(self.address)
+        self.server = None
         self.btn_data = [False, False, False, False, False]
-        self._initialized = False
 
     async def initialize(self):
         """Initialize the server connection"""
-        if self._initialized:
-            return self.server
-
         try:
-            # Test connection with a simple method call
-            await self.server.connect()
-            # Test if server is responding
-            await self.server.SystemInfo()
-            self._initialized = True
+            self.server = Server(self.address)
+            buttons = await self.server.Buttons()
             print(f"Successfully connected to server at {self.address}")
             return self.server
         except Exception as e:
             print(f"Failed to initialize server: {e}")
             print(f"Please verify the server is running at: {self.address}")
-            self._initialized = False
             raise
 
     async def cleanup(self):
@@ -53,7 +45,8 @@ class ServerManager:
     async def show_image(self, encoded_img):
         """Display an image on the LCD screen"""
         try:
-            await self.server.LcdShow(image=encoded_img)
+            if self.server:
+                await self.server.LcdShow(image=encoded_img)
         except Exception as e:
             print(f"Error showing image: {e}")
 
