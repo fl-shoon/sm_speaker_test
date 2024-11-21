@@ -6,7 +6,7 @@ import subprocess
 class ServerManager:
     def __init__(self, address=None):
         if address is None:
-            self.address = "http://192.168.100.85:8080"
+            self.address = "http://192.168.2.1:8080" 
         else:
             self.address = address
         
@@ -18,29 +18,37 @@ class ServerManager:
 
         self.server = Server(self.address)
         self.btn_data = [False, False, False, False, False]
-        
+        self._initialized = False
+
     async def initialize(self):
         """Initialize the server connection"""
+        if self._initialized:
+            return self.server
+
         try:
-            # Try to ping or get system info first to verify connection
+            # Test connection with a simple method call
             await self.server.connect()
-            # info = await self.server.SystemInfo()
-            print("Server connected successfully:", info)
+            # Test if server is responding
+            await self.server.SystemInfo()
+            self._initialized = True
+            print(f"Successfully connected to server at {self.address}")
             return self.server
         except Exception as e:
             print(f"Failed to initialize server: {e}")
-            print("Please verify the server is running at:", self.address)
+            print(f"Please verify the server is running at: {self.address}")
+            self._initialized = False
             raise
-        
+
     async def cleanup(self):
         """Clean up server resources"""
-        try:
-            if hasattr(self.server, '_session'):
-                await self.server._session.close()
-            if hasattr(self.server, '_connector'):
-                await self.server._connector.close()
-        except Exception as e:
-            print(f"Error during cleanup: {e}")
+        if hasattr(self, 'server'):
+            try:
+                if hasattr(self.server, '_session') and self.server._session:
+                    await self.server._session.close()
+                if hasattr(self.server, '_connector') and self.server._connector:
+                    await self.server._connector.close()
+            except Exception as e:
+                print(f"Error during server cleanup: {e}")
 
     async def show_image(self, encoded_img):
         """Display an image on the LCD screen"""
