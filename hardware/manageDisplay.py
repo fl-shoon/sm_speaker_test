@@ -17,10 +17,34 @@ class ManageDisplay:
         self.current_brightness = max(0.0, min(1.0, brightness))
 
     def frame_to_bytes(self, frame):
+        """Convert numpy array frame to hex string"""
         img = Image.fromarray(frame)
         img_byte_arr = io.BytesIO()
         img.save(img_byte_arr, format='PNG')
+        # Convert to hex string for JSON serialization
         return img_byte_arr.getvalue().hex()
+
+    def prepare_gif(self, gif_path, target_size=(240, 240)):
+        """Prepare GIF frames for display"""
+        frames = []
+        try:
+            gif = Image.open(gif_path)
+            # Add first frame
+            frame = gif.copy().convert('RGB').resize(target_size)
+            frames.append(np.array(frame))
+            
+            # Process remaining frames
+            while True:
+                try:
+                    gif.seek(gif.tell() + 1)
+                    frame = gif.copy().convert('RGB').resize(target_size)
+                    frames.append(np.array(frame))
+                except EOFError:
+                    break
+        except Exception as e:
+            print(f"Error preparing GIF: {e}")
+            return []
+        return frames
     
     def encode_image_to_bytes(self, image):
         """Convert PIL Image to bytes that can be JSON serialized"""
@@ -35,18 +59,6 @@ class ManageDisplay:
             return image  # If already hex string, return as is
         else:
             raise ValueError(f"Unsupported image type: {type(image)}")
-    
-    def prepare_gif(self, gif_path, target_size=(240, 240)):
-        gif = Image.open(gif_path)
-        frames = []
-        try:
-            while True:
-                gif.seek(gif.tell() + 1)
-                frame = gif.copy().convert('RGB').resize(target_size)
-                frames.append(np.array(frame))
-        except EOFError:
-            pass  
-        return frames
     
     def precompute_frames(self, frames):
         return [self.frame_to_bytes(frame) for frame in frames]

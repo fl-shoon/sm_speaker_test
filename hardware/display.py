@@ -61,18 +61,35 @@ class DisplayModule:
 
     async def update_gif(self, gif_path): 
         try:
+            # Get frames and precompute their encoded versions
             frames = self.display_manager.prepare_gif(gif_path)
-            all_frames = self.display_manager.precompute_frames(frames)
+            if not frames:
+                display_logger.error("No frames loaded from GIF")
+                return
+                
+            encoded_frames = self.display_manager.precompute_frames(frames)
+            frame_count = len(encoded_frames)
             
+            if frame_count == 0:
+                display_logger.error("No frames encoded from GIF")
+                return
+                
             frame_index = 0
+            display_logger.info(f"Starting GIF playback with {frame_count} frames")
+            
             while self.player.playback_active:
-                frame = Image.open(io.BytesIO(all_frames[frame_index]))
-                brightened_frame = self.display_manager.apply_brightness(frame)
-                encoded_data = self.display_manager.encode_image_to_bytes(brightened_frame)
-                await self.display_manager.send_image(encoded_data)
-
-                frame_index = (frame_index + 1) % len(all_frames)
-                await asyncio.sleep(0.1)
+                try:
+                    # Get encoded frame data
+                    encoded_data = encoded_frames[frame_index]
+                    await self.display_manager.send_image(encoded_data)
+                    
+                    frame_index = (frame_index + 1) % frame_count
+                    await asyncio.sleep(0.1)  # Control frame rate
+                    
+                except Exception as e:
+                    display_logger.error(f"Error displaying frame {frame_index}: {e}")
+                    raise
+                    
         except Exception as e:
             display_logger.error(f"Error in update_gif: {e}")
             raise
