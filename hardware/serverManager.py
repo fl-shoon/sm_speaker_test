@@ -6,7 +6,7 @@ import subprocess
 class ServerManager:
     def __init__(self, address=None):
         if address is None:
-            self.address = "http://localhost:8080"
+            self.address = "http://192.168.100.85:8080"
         else:
             self.address = address
         
