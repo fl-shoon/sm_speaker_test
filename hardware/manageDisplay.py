@@ -23,15 +23,18 @@ class ManageDisplay:
         return img_byte_arr.getvalue().hex()
     
     def encode_image_to_bytes(self, image):
-        """Convert PIL Image to hex string that can be JSON serialized"""
-        img_byte_arr = io.BytesIO()
-        # Convert to RGB if not already
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        # Save as PNG
-        image.save(img_byte_arr, format='PNG')
-        # Convert to hex string
-        return img_byte_arr.getvalue().hex()
+        """Convert PIL Image to bytes that can be JSON serialized"""
+        if isinstance(image, Image.Image):
+            img_byte_arr = io.BytesIO()
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            image.save(img_byte_arr, format='PNG')
+            # Convert bytes to hex string for JSON serialization
+            return img_byte_arr.getvalue().hex()
+        elif isinstance(image, str):
+            return image  # If already hex string, return as is
+        else:
+            raise ValueError(f"Unsupported image type: {type(image)}")
     
     def prepare_gif(self, gif_path, target_size=(240, 240)):
         gif = Image.open(gif_path)
