@@ -33,12 +33,12 @@ class ServerManager:
 
     async def cleanup(self):
         """Clean up server resources"""
-        if hasattr(self, 'server'):
+        if self.server and hasattr(self.server, '_session'):
             try:
-                if hasattr(self.server, '_session') and self.server._session:
+                if not self.server._session.closed:
                     await self.server._session.close()
-                if hasattr(self.server, '_connector') and self.server._connector:
-                    await self.server._connector.close()
+                # Wait for all connections to close
+                await asyncio.sleep(0.1)
             except Exception as e:
                 print(f"Error during server cleanup: {e}")
 

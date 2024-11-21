@@ -23,8 +23,14 @@ class ManageDisplay:
         return img_byte_arr.getvalue().hex()
     
     def encode_image_to_bytes(self, image):
+        """Convert PIL Image to hex string that can be JSON serialized"""
         img_byte_arr = io.BytesIO()
+        # Convert to RGB if not already
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        # Save as PNG
         image.save(img_byte_arr, format='PNG')
+        # Convert to hex string
         return img_byte_arr.getvalue().hex()
     
     def prepare_gif(self, gif_path, target_size=(240, 240)):
