@@ -11,7 +11,7 @@ class ServerManager:
             self.address = address
         
         try:
-            self.font = ImageFont.truetype("/Users/nobo/Library/Fonts/NotoSansCJKjp-Regular.otf", 24)
+            self.font = ImageFont.truetype("/usr/share/fonts/noto/NotoSansCJK-Regular.ttc", 24)
         except:
             print("Warning: Default font not found. Some text rendering features may not work.")
             self.font = None
