@@ -21,7 +21,6 @@ class ManageDisplay:
         img = Image.fromarray(frame)
         img_byte_arr = io.BytesIO()
         img.save(img_byte_arr, format='PNG')
-        # Convert to hex string for JSON serialization
         return img_byte_arr.getvalue().hex()
 
     def prepare_gif(self, gif_path, target_size=(240, 240)):
@@ -53,10 +52,9 @@ class ManageDisplay:
             if image.mode != 'RGB':
                 image = image.convert('RGB')
             image.save(img_byte_arr, format='PNG')
-            # Convert bytes to hex string for JSON serialization
             return img_byte_arr.getvalue().hex()
         elif isinstance(image, str):
-            return image  # If already hex string, return as is
+            return image  
         else:
             raise ValueError(f"Unsupported image type: {type(image)}")
     
@@ -76,8 +74,8 @@ class ManageDisplay:
     async def send_white_frames(self):
         try:
             white_screen = self.create_solid_screen()
-            encoded_data = self.encode_image_to_bytes(white_screen)  # Add this line
-            await self.server.show_image(encoded_data)  # Modify this line
+            encoded_data = self.encode_image_to_bytes(white_screen)  
+            await self.server.show_image(encoded_data)  
         except Exception as e:
             print(f"Error sending white frames: {e}")
 

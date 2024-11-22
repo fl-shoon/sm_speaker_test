@@ -1,6 +1,7 @@
 from jsonrpc_async import Server
 from PIL import Image, ImageFont, ImageDraw
 
+import asyncio
 import subprocess
 
 class ServerManager:
@@ -170,66 +171,62 @@ class ServerManager:
         if active[0]:
             subprocess.run("poweroff")
 
-async def example_button_handling():
-    manager = ServerManager()
-    await manager.initialize()
+# async def example_button_handling():
+#     manager = ServerManager()
+#     await manager.initialize()
     
-    try:
-        while True:
-            active_buttons = await manager.get_buttons()
+#     try:
+#         while True:
+#             active_buttons = await manager.get_buttons()
             
-            # Check each button
-            for i, is_pressed in enumerate(active_buttons):
-                if is_pressed:
-                    print(f"Button {i} was just pressed!")
+#             # Check each button
+#             for i, is_pressed in enumerate(active_buttons):
+#                 if is_pressed:
+#                     print(f"Button {i} was just pressed!")
                     
-                    # Example actions for different buttons
-                    if i == 0:
-                        # First button pressed
-                        sensors = await manager.get_sensors()
-                        print("Sensors:", sensors)
-                    elif i == 1:
-                        # Second button pressed
-                        await manager.set_motor(730)
-                    elif i == 2:
-                        # Third button pressed
-                        await manager.set_motor(0)
+#                     # Example actions for different buttons
+#                     if i == 0:
+#                         # First button pressed
+#                         sensors = await manager.get_sensors()
+#                         print("Sensors:", sensors)
+#                     elif i == 1:
+#                         # Second button pressed
+#                         await manager.set_motor(730)
+#                     elif i == 2:
+#                         # Third button pressed
+#                         await manager.set_motor(0)
                         
-            await asyncio.sleep(0.1)  # Small delay to prevent busy-waiting
+#             await asyncio.sleep(0.1)  # Small delay to prevent busy-waiting
             
-    except Exception as e:
-        print(f"Error: {e}")
-    finally:
-        await manager.cleanup()
+#     except Exception as e:
+#         print(f"Error: {e}")
+#     finally:
+#         await manager.cleanup()
 
-async def main():
-    # Create server manager instance
-    manager = ServerManager()
+# async def main():
+#     # Create server manager instance
+#     manager = ServerManager()
     
-    try:
-        # Initialize connection
-        await manager.initialize()
+#     try:
+#         # Initialize connection
+#         await manager.initialize()
         
-        # Reset motor to home position
-        await manager.reset_motor()
+#         # Reset motor to home position
+#         await manager.reset_motor()
         
-        # Set LCD backlight to 50%
-        await manager.set_lcd_config(backlight=50)
+#         # Set LCD backlight to 50%
+#         await manager.set_lcd_config(backlight=50)
         
-        # Create and show a text image
-        text_img = manager.create_text_image("Hello World!")
-        await manager.show_image(text_img)
+#         # Create and show a text image
+#         text_img = manager.create_text_image("Hello World!")
+#         await manager.show_image(text_img)
         
-        # Get sensor data
-        sensors = await manager.get_sensors()
-        print("Sensor data:", sensors)
+#         # Get sensor data
+#         sensors = await manager.get_sensors()
+#         print("Sensor data:", sensors)
         
-        # Clean up when done
-        await manager.cleanup()
+#         # Clean up when done
+#         await manager.cleanup()
         
-    except Exception as e:
-        print(f"Error in main: {e}")
-
-# Run the main function
-import asyncio
-asyncio.run(main())
+#     except Exception as e:
+#         print(f"Error in main: {e}")
