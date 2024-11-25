@@ -87,14 +87,6 @@ class ServerManager:
             print(f"Reconnection failed: {e}")
             raise
 
-    # async def get_system_info(self):
-    #     """Get system information"""
-    #     try:
-    #         return await self.server.SystemInfo()
-    #     except Exception as e:
-    #         print(f"Error getting system info: {e}")
-    #         return {}
-        
     # Utility methods for image handling
     def create_text_image(self, text, size=(240, 240), offset=(0, 0), 
                          color=(0, 0, 0), background=(255, 255, 255)):
@@ -227,30 +219,30 @@ class ServerManager:
 #     finally:
 #         await manager.cleanup()
 
-# async def main():
-#     # Create server manager instance
-#     manager = ServerManager()
+async def main():
+    # Create server manager instance
+    manager = ServerManager()
     
-#     try:
-#         # Initialize connection
-#         await manager.initialize()
+    try:
+        # Initialize connection
+        await manager.initialize()
         
-#         # Reset motor to home position
-#         await manager.reset_motor()
+        # Reset motor to home position
+        await manager.reset_motor()
         
-#         # Set LCD backlight to 50%
-#         await manager.set_lcd_config(backlight=50)
+        # Set LCD backlight to 50%
+        await manager.set_lcd_config(backlight=50)
         
-#         # Create and show a text image
-#         text_img = manager.create_text_image("Hello World!")
-#         await manager.show_image(text_img)
+        # Create and show a text image
+        text_img = manager.create_text_image("Hello World!")
+        await manager.show_image(text_img)
         
-#         # Get sensor data
-#         sensors = await manager.get_sensors()
-#         print("Sensor data:", sensors)
+        # Get sensor data
+        sensors = await manager.get_sensors()
+        print("Sensor data:", sensors)
         
-#         # Clean up when done
-#         await manager.cleanup()
+        # Clean up when done
+        await manager.cleanup()
         
-#     except Exception as e:
-#         print(f"Error in main: {e}")
+    except Exception as e:
+        print(f"Error in main: {e}")

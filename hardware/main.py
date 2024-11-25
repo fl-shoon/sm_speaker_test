@@ -38,6 +38,16 @@ async def cleanup(server_manager, display, player):
     except Exception as e:
         print(f"Error during cleanup: {e}")
 
+async def monitor_buttons(server):
+    try:
+        while True:
+            buttons = await server.get_buttons()
+            if buttons[0]:
+                print("Button 1 pressed")
+            await asyncio.sleep(0.1)  
+    except asyncio.CancelledError:
+        print("Button monitoring cancelled")
+
 async def main():
     server_manager = None
     display_manager = None
@@ -66,6 +76,8 @@ async def main():
             
         loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGINT, signal_handler)
+
+        button_task = asyncio.create_task(monitor_buttons(server=server_manager))
         
         # Create and start trigger task
         trigger_task = asyncio.create_task(
@@ -105,6 +117,11 @@ async def main():
         import traceback
         traceback.print_exc()
     finally:
+        button_task.cancel()
+        try:
+            await button_task
+        except asyncio.CancelledError:
+            pass
         # Cleanup
         await cleanup(server_manager, display, player)
 
