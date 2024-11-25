@@ -228,14 +228,14 @@ async def main():
         await manager.initialize()
         
         # Reset motor to home position
-        await manager.reset_motor()
+        # await manager.reset_motor()
         
         # Set LCD backlight to 50%
-        await manager.set_lcd_config(backlight=50)
+        await manager.set_lcd_config(backlight=100)
         
         # Create and show a text image
-        text_img = manager.create_text_image("Hello World!")
-        await manager.show_image(text_img)
+        # text_img = manager.create_text_image("Hello World!")
+        # await manager.show_image(text_img)
         
         # Get sensor data
         sensors = await manager.get_sensors()
