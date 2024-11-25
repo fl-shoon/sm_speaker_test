@@ -187,37 +187,37 @@ class ServerManager:
         if active[0]:
             subprocess.run("poweroff")
 
-# async def example_button_handling():
-#     manager = ServerManager()
-#     await manager.initialize()
+async def example_button_handling():
+    manager = ServerManager()
+    await manager.initialize()
     
-#     try:
-#         while True:
-#             active_buttons = await manager.get_buttons()
+    try:
+        while True:
+            active_buttons = await manager.get_buttons()
             
-#             # Check each button
-#             for i, is_pressed in enumerate(active_buttons):
-#                 if is_pressed:
-#                     print(f"Button {i} was just pressed!")
+            # Check each button
+            for i, is_pressed in enumerate(active_buttons):
+                if is_pressed:
+                    print(f"Button {i} was just pressed!")
                     
-#                     # Example actions for different buttons
-#                     if i == 0:
-#                         # First button pressed
-#                         sensors = await manager.get_sensors()
-#                         print("Sensors:", sensors)
-#                     elif i == 1:
-#                         # Second button pressed
-#                         await manager.set_motor(730)
-#                     elif i == 2:
-#                         # Third button pressed
-#                         await manager.set_motor(0)
+                    # Example actions for different buttons
+                    if i == 0:
+                        # First button pressed
+                        sensors = await manager.get_sensors()
+                        print("Sensors:", sensors)
+                    elif i == 1:
+                        # Second button pressed
+                        await manager.set_motor(730)
+                    elif i == 2:
+                        # Third button pressed
+                        await manager.set_motor(0)
                         
-#             await asyncio.sleep(0.1)  # Small delay to prevent busy-waiting
+            await asyncio.sleep(0.1)  # Small delay to prevent busy-waiting
             
-#     except Exception as e:
-#         print(f"Error: {e}")
-#     finally:
-#         await manager.cleanup()
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        await manager.cleanup()
 
 async def main():
     # Create server manager instance
@@ -249,6 +249,6 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        asyncio.run(example_button_handling())
     except KeyboardInterrupt:
         print("\nShutdown requested...")
