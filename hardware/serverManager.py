@@ -1,6 +1,7 @@
 from jsonrpc_async import Server
 from PIL import Image, ImageFont, ImageDraw
 
+import aiohttp
 import asyncio
 import subprocess
 
@@ -20,13 +21,18 @@ class ServerManager:
         self.server = None
         self.btn_data = [False, False, False, False, False]
         self.max_retries = 3
-        self.retry_delay = 2 
+        self.retry_delay = 2
+        self._session = None
 
     async def initialize(self):
         """Initialize the server connection with retry logic"""
         for attempt in range(self.max_retries):
             try:
-                self.server = Server(self.address)
+                # Create a new session
+                if self._session is None:
+                    self._session = aiohttp.ClientSession()
+                
+                self.server = Server(self.address, session=self._session)
                 buttons = await self.server.Buttons()
                 print(f"Successfully connected to server at {self.address}")
                 return self.server
@@ -38,18 +44,24 @@ class ServerManager:
                 else:
                     print(f"Failed to initialize server after {self.max_retries} attempts: {e}")
                     print(f"Please verify the server is running at: {self.address}")
+                    # Clean up session on failure
+                    await self._cleanup_session()
                     raise
+
+    async def _cleanup_session(self):
+        """Clean up the aiohttp session"""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            # Wait for all connections to close
+            await asyncio.sleep(0.1)
+        self._session = None
 
     async def cleanup(self):
         """Clean up server resources"""
-        if self.server and hasattr(self.server, '_session'):
-            try:
-                if not self.server._session.closed:
-                    await self.server._session.close()
-                # Wait for all connections to close
-                await asyncio.sleep(0.1)
-            except Exception as e:
-                print(f"Error during server cleanup: {e}")
+        try:
+            await self._cleanup_session()
+        except Exception as e:
+            print(f"Error during server cleanup: {e}")
 
     async def show_image(self, encoded_img):
         """Display an image on the LCD screen with retry on failure"""
@@ -65,69 +77,6 @@ class ServerManager:
                 else:
                     print(f"Error showing image after {self.max_retries} attempts: {e}")
                     raise
-
-    async def get_buttons(self):
-        """Get button states and detect new presses"""
-        try:
-            buttons = await self.server.Buttons()
-            active = [not self.btn_data[i] and v for i, v in enumerate(buttons)]
-            self.btn_data = buttons
-            return active
-        except Exception as e:
-            print(f"Error getting button states: {e}")
-            return [False] * 5
-    
-    async def get_sensors(self):
-        """
-        各種センサの値を取得、返値例:
-        {
-            'motion': False,       # 人検知センサ(True:動き有り)
-            'temperature': 25.541, # 温度[celsius]
-            'humidity': 46.406,    # 相対湿度[%]
-            'lux1': 91,            # UVの明るさ[lux]
-            'lux2': 169            # 可視光＋UVの明るさ[lux]
-        }
-        """
-        try:
-            sensors = await self.server.Sensors()
-            return sensors if sensors else {}
-        except Exception as e:
-            print(f"Error getting sensor data: {e}")
-            return {}
-        
-    async def set_lcd_config(self, backlight=None):
-        """Configure LCD settings
-        Args:
-            backlight (int, optional): Backlight brightness 0-100
-        """
-        try:
-            config = {}
-            if backlight is not None:
-                config['backlight'] = max(0, min(100, backlight))
-            if config:
-                await self.server.LcdConfig(**config)
-        except Exception as e:
-            print(f"Error configuring LCD: {e}")
-
-    async def set_motor(self, deg):
-        """Set motor position
-        Args:
-            deg (int): Target position in degrees
-        """
-        try:
-            await self.server.MotorSet(deg=deg)
-        except Exception as e:
-            print(f"Error setting motor position: {e}")
-
-    async def reset_motor(self, deg=-90):
-        """Reset motor to home position
-        Args:
-            deg (int, optional): Home position in degrees. Defaults to -90
-        """
-        try:
-            await self.server.MotorReset(deg=deg)
-        except Exception as e:
-            print(f"Error resetting motor: {e}")
 
     async def reconnect(self):
         """Attempt to reconnect to the server"""
@@ -189,6 +138,57 @@ class ServerManager:
         except Exception as e:
             print(f"Error building composite image: {e}")
             raise
+
+    async def get_buttons(self):
+        """Get button states and detect new presses"""
+        try:
+            buttons = await self.server.Buttons()
+            active = [not self.btn_data[i] and v for i, v in enumerate(buttons)]
+            self.btn_data = buttons
+            return active
+        except Exception as e:
+            print(f"Error getting button states: {e}")
+            return [False] * 5
+    
+    async def get_sensors(self):
+        """
+        各種センサの値を取得、返値例:
+        {
+            'motion': False,       # 人検知センサ(True:動き有り)
+            'temperature': 25.541, # 温度[celsius]
+            'humidity': 46.406,    # 相対湿度[%]
+            'lux1': 91,            # UVの明るさ[lux]
+            'lux2': 169            # 可視光＋UVの明るさ[lux]
+        }
+        """
+        try:
+            sensors = await self.server.Sensors()
+            return sensors if sensors else {}
+        except Exception as e:
+            print(f"Error getting sensor data: {e}")
+            return {}
+        
+    async def set_lcd_config(self, backlight=None):
+        try:
+            config = {}
+            if backlight is not None:
+                config['backlight'] = max(0, min(100, backlight))
+            if config:
+                await self.server.LcdConfig(**config)
+        except Exception as e:
+            print(f"Error configuring LCD: {e}")
+
+    async def set_motor(self, deg):
+        try:
+            await self.server.MotorSet(deg=deg)
+        except Exception as e:
+            print(f"Error setting motor position: {e}")
+
+    async def reset_motor(self, deg=-90):
+        try:
+            await self.server.MotorReset(deg=deg)
+        except Exception as e:
+            print(f"Error resetting motor: {e}")
 
     def power_off(self):
         active = self.get_buttons()

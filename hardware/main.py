@@ -9,18 +9,25 @@ import signal
 async def cleanup(server_manager, display, player):
     """Cleanup function to properly close resources"""
     try:
+        cleanup_tasks = []
+        
         if player:
             player.stop_playback()
+            
         if display:
-            await display.cleanup_display()
-        if server_manager and hasattr(server_manager.server, '_session'):
-            await server_manager.cleanup()
-            if hasattr(server_manager.server, '_session') and not server_manager.server._session.closed:
-                await server_manager.server._session.close()
-                
-        # Clean up any remaining sessions
+            cleanup_tasks.append(display.cleanup_display())
+            
+        if server_manager:
+            cleanup_tasks.append(server_manager.cleanup())
+            
+        if cleanup_tasks:
+            # Wait for all cleanup tasks to complete
+            await asyncio.gather(*cleanup_tasks)
+        
+        # Clean up any remaining tasks
+        current_task = asyncio.current_task()
         for task in asyncio.all_tasks():
-            if not task.done() and task != asyncio.current_task():
+            if task is not current_task and not task.done():
                 task.cancel()
                 try:
                     await task
