@@ -109,4 +109,8 @@ class AudioPlayer:
     def stop_playback(self):
         """Stop current audio and animation playback"""
         self.playback_active = False
-        mixer.music.stop()
+        if self.audio_available:
+            try:
+                mixer.music.stop()
+            except Exception as e:
+                print(f"Error stopping playback: {e}")
