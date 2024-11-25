@@ -19,18 +19,26 @@ class ServerManager:
 
         self.server = None
         self.btn_data = [False, False, False, False, False]
+        self.max_retries = 3
+        self.retry_delay = 2 
 
     async def initialize(self):
-        """Initialize the server connection"""
-        try:
-            self.server = Server(self.address)
-            buttons = await self.server.Buttons()
-            print(f"Successfully connected to server at {self.address}")
-            return self.server
-        except Exception as e:
-            print(f"Failed to initialize server: {e}")
-            print(f"Please verify the server is running at: {self.address}")
-            raise
+        """Initialize the server connection with retry logic"""
+        for attempt in range(self.max_retries):
+            try:
+                self.server = Server(self.address)
+                buttons = await self.server.Buttons()
+                print(f"Successfully connected to server at {self.address}")
+                return self.server
+            except Exception as e:
+                if attempt < self.max_retries - 1:
+                    print(f"Connection attempt {attempt + 1} failed: {e}")
+                    print(f"Retrying in {self.retry_delay} seconds...")
+                    await asyncio.sleep(self.retry_delay)
+                else:
+                    print(f"Failed to initialize server after {self.max_retries} attempts: {e}")
+                    print(f"Please verify the server is running at: {self.address}")
+                    raise
 
     async def cleanup(self):
         """Clean up server resources"""
@@ -44,12 +52,19 @@ class ServerManager:
                 print(f"Error during server cleanup: {e}")
 
     async def show_image(self, encoded_img):
-        """Display an image on the LCD screen"""
-        try:
-            if self.server:
-                await self.server.LcdShow(image=encoded_img)
-        except Exception as e:
-            print(f"Error showing image: {e}")
+        """Display an image on the LCD screen with retry on failure"""
+        for attempt in range(self.max_retries):
+            try:
+                if self.server:
+                    await self.server.LcdShow(image=encoded_img)
+                    return
+            except Exception as e:
+                if attempt < self.max_retries - 1:
+                    print(f"Show image failed, attempting to reconnect...")
+                    await self.reconnect()
+                else:
+                    print(f"Error showing image after {self.max_retries} attempts: {e}")
+                    raise
 
     async def get_buttons(self):
         """Get button states and detect new presses"""
@@ -113,6 +128,15 @@ class ServerManager:
             await self.server.MotorReset(deg=deg)
         except Exception as e:
             print(f"Error resetting motor: {e}")
+
+    async def reconnect(self):
+        """Attempt to reconnect to the server"""
+        try:
+            await self.cleanup()
+            await self.initialize()
+        except Exception as e:
+            print(f"Reconnection failed: {e}")
+            raise
 
     # async def get_system_info(self):
     #     """Get system information"""

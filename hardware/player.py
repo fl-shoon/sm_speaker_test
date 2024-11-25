@@ -90,6 +90,7 @@ class AudioPlayer:
 
     async def sync_audio_and_gif(self, audio_file, gif_path):
         try:
+            self.set_audio_volume(0.3)
             self.playback_active = True
             if self.audio_available:
                 self.play_audio(audio_file)
