@@ -246,3 +246,9 @@ async def main():
         
     except Exception as e:
         print(f"Error in main: {e}")
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nShutdown requested...")
