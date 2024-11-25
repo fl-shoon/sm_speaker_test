@@ -29,16 +29,14 @@ class AudioPlayer:
         self.audio_available = False
         self.mixer_initialized = False
         
-        # Set environment variables
         os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
-        os.environ['SDL_AUDIODRIVER'] = 'pulseaudio'  # Try pulseaudio first
+        os.environ['SDL_AUDIODRIVER'] = 'pulseaudio'  
         
         try:
             with suppress_stdout_stderr():
                 pygame.init()
                 mixer.init(frequency=44100, size=-16, channels=2, buffer=4096)
                 
-            # Test audio
             self.current_volume = 0.5
             mixer.music.set_volume(self.current_volume)
             self.audio_available = True
@@ -47,7 +45,6 @@ class AudioPlayer:
         except Exception as e:
             print(f"Warning: Audio initialization failed with pulseaudio: {e}")
             try:
-                # Try with ALSA as fallback
                 os.environ['SDL_AUDIODRIVER'] = 'alsa'
                 with suppress_stdout_stderr():
                     mixer.quit()
@@ -87,7 +84,7 @@ class AudioPlayer:
     async def check_music_status(self):
         """Check if music is still playing"""
         if not self.mixer_initialized:
-            await asyncio.sleep(2)  # Fallback delay
+            await asyncio.sleep(2)  
             self.playback_active = False
             return
             
@@ -106,7 +103,7 @@ class AudioPlayer:
                 self.play_audio(trigger_audio)
                 audio_task = asyncio.create_task(self.check_music_status())
             else:
-                audio_task = asyncio.create_task(asyncio.sleep(2))  # Fallback delay
+                audio_task = asyncio.create_task(asyncio.sleep(2))  
             
             logo_task = asyncio.create_task(self.display.fade_in_logo(logo_path))
             await asyncio.gather(audio_task, logo_task)

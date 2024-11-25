@@ -1,0 +1,7 @@
+/tmp/seaman_ai_speaker.log {
+    rotate 7
+    daily
+    compress
+    missingok
+    notifempty
+}

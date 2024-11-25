@@ -28,11 +28,9 @@ class ManageDisplay:
         frames = []
         try:
             gif = Image.open(gif_path)
-            # Add first frame
             frame = gif.copy().convert('RGB').resize(target_size)
             frames.append(np.array(frame))
             
-            # Process remaining frames
             while True:
                 try:
                     gif.seek(gif.tell() + 1)

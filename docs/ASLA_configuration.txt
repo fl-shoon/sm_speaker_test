@@ -1,0 +1,8 @@
+pcm.!default {
+    type hw
+    card 2
+    device 0
+}
+
+defaults.pcm.buffer_size 32768
+defaults.pcm.period_size 8192
