@@ -15,6 +15,18 @@ async def cleanup(server_manager, display, player):
             await display.cleanup_display()
         if server_manager and hasattr(server_manager.server, '_session'):
             await server_manager.cleanup()
+            if hasattr(server_manager.server, '_session') and not server_manager.server._session.closed:
+                await server_manager.server._session.close()
+                
+        # Clean up any remaining sessions
+        for task in asyncio.all_tasks():
+            if not task.done() and task != asyncio.current_task():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                
         await asyncio.sleep(0.1)
     except Exception as e:
         print(f"Error during cleanup: {e}")

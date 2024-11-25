@@ -27,10 +27,11 @@ class AudioPlayer:
         self.display.set_player_for_display(self)  
         self.playback_active = False
         self.audio_available = False
+        self.mixer_initialized = False
         
         # Set environment variables
         os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
-        os.environ['SDL_AUDIODRIVER'] = 'default'
+        os.environ['SDL_AUDIODRIVER'] = 'pulseaudio'  # Try pulseaudio first
         
         try:
             with suppress_stdout_stderr():
@@ -41,21 +42,37 @@ class AudioPlayer:
             self.current_volume = 0.5
             mixer.music.set_volume(self.current_volume)
             self.audio_available = True
+            self.mixer_initialized = True
             
         except Exception as e:
-            print(f"Warning: Audio initialization failed: {e}")
-            print("Audio playback will be disabled")
-            self.audio_available = False
+            print(f"Warning: Audio initialization failed with pulseaudio: {e}")
+            try:
+                # Try with ALSA as fallback
+                os.environ['SDL_AUDIODRIVER'] = 'alsa'
+                with suppress_stdout_stderr():
+                    mixer.quit()
+                    mixer.init(frequency=44100, size=-16, channels=2, buffer=4096)
+                self.current_volume = 0.5
+                mixer.music.set_volume(self.current_volume)
+                self.audio_available = True
+                self.mixer_initialized = True
+            except Exception as e2:
+                print(f"Warning: Audio initialization failed with alsa: {e2}")
+                print("Audio playback will be disabled")
+                self.audio_available = False
+                self.mixer_initialized = False
 
     def set_audio_volume(self, volume):
         """Set audio volume between 0.0 and 1.0"""
+        if not self.mixer_initialized:
+            return
         self.current_volume = max(0.0, min(1.0, volume))
         if mixer.music.get_busy():
             mixer.music.set_volume(self.current_volume)
 
     def play_audio(self, filename):
         """Play audio if available"""
-        if not self.audio_available:
+        if not self.audio_available or not self.mixer_initialized:
             print("Audio playback is not available")
             return
         try:
@@ -65,17 +82,27 @@ class AudioPlayer:
                 mixer.music.set_volume(self.current_volume)
         except Exception as e:
             print(f"Error playing audio: {e}")
+            self.audio_available = False
 
     async def check_music_status(self):
         """Check if music is still playing"""
-        while self.playback_active and mixer.music.get_busy():
-            await asyncio.sleep(0.1)
-        self.playback_active = False
+        if not self.mixer_initialized:
+            await asyncio.sleep(2)  # Fallback delay
+            self.playback_active = False
+            return
+            
+        try:
+            while self.playback_active and mixer.music.get_busy():
+                await asyncio.sleep(0.1)
+        except Exception as e:
+            print(f"Error checking music status: {e}")
+        finally:
+            self.playback_active = False
 
     async def play_trigger_with_logo(self, trigger_audio, logo_path):
         try: 
             self.playback_active = True
-            if self.audio_available:
+            if self.audio_available and self.mixer_initialized:
                 self.play_audio(trigger_audio)
                 audio_task = asyncio.create_task(self.check_music_status())
             else:
@@ -90,9 +117,11 @@ class AudioPlayer:
 
     async def sync_audio_and_gif(self, audio_file, gif_path):
         try:
-            self.set_audio_volume(0.3)
+            if self.mixer_initialized:
+                self.set_audio_volume(0.3)
             self.playback_active = True
-            if self.audio_available:
+            
+            if self.audio_available and self.mixer_initialized:
                 self.play_audio(audio_file)
                 audio_task = asyncio.create_task(self.check_music_status())
             else:
@@ -109,8 +138,9 @@ class AudioPlayer:
     def stop_playback(self):
         """Stop current audio and animation playback"""
         self.playback_active = False
-        if self.audio_available:
+        if self.mixer_initialized and self.audio_available:
             try:
                 mixer.music.stop()
             except Exception as e:
                 print(f"Error stopping playback: {e}")
+                self.audio_available = False
