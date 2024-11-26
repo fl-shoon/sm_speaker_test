@@ -47,6 +47,7 @@ SatoruHappy = os.path.join(IMAGE_DIR, "happy.png")
 BautRate = '230400'
 
 # voice trigger 
+PicoLangLib = os.path.join(VOICE_TRIGGER_DIR,"libpv_porcupine.so")
 PicoLangModel = os.path.join(VOICE_TRIGGER_DIR,"pico_voice_language_model_ja.pv")
 PicoWakeWordKonnichiwa = os.path.join(VOICE_TRIGGER_DIR,"pico_voice_wake_word_konnichiwa.ppn") 
 PicoWakeWordSatoru = os.path.join(VOICE_TRIGGER_DIR,"pico_voice_wake_word_satoru.ppn") 
