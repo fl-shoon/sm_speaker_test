@@ -5,6 +5,7 @@ import numpy as np
 import pvporcupine
 import pyaudio
 import time
+import threading
 
 logging.basicConfig(level=logging.INFO)
 pico_logger = logging.getLogger(__name__)
@@ -18,44 +19,56 @@ class PicoVoiceTrigger:
         self.frame_length = None
         self.device_retry_count = 3
         self.device_retry_delay = 1
+        self._lock = threading.Lock()  
+        self.args = args
         self.initialize(args)
 
     def initialize(self, args):
         """Initialize Porcupine and audio stream"""
         try:
-            # Initialize Porcupine first
-            self.porcupine = self._create_porcupine(
-                args.access_key, 
-                args.model_path, 
-                args.keyword_paths, 
-                args.sensitivities
-            )
-            
-            self.frame_length = self.porcupine.frame_length
-            
-            # Initialize audio with retry logic
-            for attempt in range(self.device_retry_count):
-                try:
-                    if self._initialize_audio():
-                        return True
-                except Exception as e:
-                    pico_logger.warning(f"Audio initialization attempt {attempt + 1} failed: {e}")
-                    if self.audio:
-                        self.audio.terminate()
-                        self.audio = None
-                    time.sleep(self.device_retry_delay)
-            
-            raise RuntimeError("Failed to initialize audio after multiple attempts")
+            with self._lock:
+                # Initialize Porcupine first
+                if self.porcupine is None:
+                    self.porcupine = self._create_porcupine(
+                        args.access_key, 
+                        args.model_path, 
+                        args.keyword_paths, 
+                        args.sensitivities
+                    )
+                
+                self.frame_length = self.porcupine.frame_length
+                
+                # Initialize audio with retry logic
+                for attempt in range(self.device_retry_count):
+                    try:
+                        if self._initialize_audio():
+                            return True
+                    except Exception as e:
+                        pico_logger.warning(f"Audio initialization attempt {attempt + 1} failed: {e}")
+                        if self.audio:
+                            self.audio.terminate()
+                            self.audio = None
+                        time.sleep(self.device_retry_delay)
+                
+                raise RuntimeError("Failed to initialize audio after multiple attempts")
             
         except Exception as e:
             pico_logger.error(f"Failed to initialize: {e}")
             self.cleanup()
             return False
 
+    def reinitialize(self):
+        """Reinitialize after failure"""
+        pico_logger.info("Attempting to reinitialize...")
+        self.cleanup()
+        time.sleep(1)  # Give ALSA time to release resources
+        return self.initialize(self.args)
+
     def _initialize_audio(self):
         """Initialize audio subsystem"""
         try:
-            self.audio = pyaudio.PyAudio()
+            if self.audio is None:
+                self.audio = pyaudio.PyAudio()
             
             # Get device info
             device_index = self._find_input_device()
@@ -63,26 +76,16 @@ class PicoVoiceTrigger:
             
             # Try to open the stream with different configurations
             configs_to_try = [
-                # Config 1: Default
+                # Config 1: Simple configuration
                 {
                     'format': pyaudio.paInt16,
                     'channels': 1,
-                    'rate': self.porcupine.sample_rate,
-                    'frames_per_buffer': self.frame_length * 2
-                },
-                # Config 2: Alternative buffer size
-                {
-                    'format': pyaudio.paInt16,
-                    'channels': 1,
-                    'rate': self.porcupine.sample_rate,
-                    'frames_per_buffer': 1024
-                },
-                # Config 3: Minimum configuration
-                {
-                    'format': pyaudio.paInt16,
-                    'channels': 1,
-                    'rate': self.porcupine.sample_rate,
-                    'frames_per_buffer': self.frame_length
+                    'rate': 16000,
+                    'frames_per_buffer': 512,
+                    'input': True,
+                    'input_device_index': device_index,
+                    'stream_callback': None,
+                    'start': False
                 }
             ]
             
@@ -90,15 +93,14 @@ class PicoVoiceTrigger:
             for config in configs_to_try:
                 try:
                     pico_logger.info(f"Trying audio configuration: {config}")
-                    self.audio_stream = self.audio.open(
-                        input=True,
-                        input_device_index=device_index,
-                        stream_callback=None,
-                        start=False,
-                        **config
-                    )
                     
+                    if self.audio_stream is not None:
+                        self.audio_stream.close()
+                        self.audio_stream = None
+                    
+                    self.audio_stream = self.audio.open(**config)
                     self.audio_stream.start_stream()
+                    
                     if self.audio_stream.is_active():
                         pico_logger.info("Successfully initialized audio stream")
                         return True
@@ -107,7 +109,10 @@ class PicoVoiceTrigger:
                     last_error = e
                     pico_logger.warning(f"Failed to initialize with config: {e}")
                     if self.audio_stream:
-                        self.audio_stream.close()
+                        try:
+                            self.audio_stream.close()
+                        except:
+                            pass
                         self.audio_stream = None
             
             if last_error:
@@ -196,16 +201,22 @@ class PicoVoiceTrigger:
     def process(self, audio_frame):
         """Process audio frame with preprocessing"""
         try:
-            # Convert bytes to numpy array
-            pcm_data = np.frombuffer(audio_frame, dtype=np.int16)
-            
-            # Apply preprocessing
-            processed_data = self._preprocess_audio(pcm_data)
-            
-            # Process with Porcupine
-            if len(processed_data) >= self.frame_length:
-                return self.porcupine.process(processed_data[:self.frame_length])
-            return -1
+            with self._lock:
+                if self.porcupine is None:
+                    pico_logger.warning("Porcupine instance is None, attempting to reinitialize...")
+                    if not self.reinitialize():
+                        return -1
+                
+                # Convert bytes to numpy array
+                pcm_data = np.frombuffer(audio_frame, dtype=np.int16)
+                
+                # Apply preprocessing
+                processed_data = self._preprocess_audio(pcm_data)
+                
+                # Process with Porcupine
+                if len(processed_data) >= self.frame_length:
+                    return self.porcupine.process(processed_data[:self.frame_length])
+                return -1
             
         except Exception as e:
             pico_logger.error(f"Error processing audio frame: {e}")
@@ -215,27 +226,28 @@ class PicoVoiceTrigger:
         """Cleanup resources"""
         pico_logger.info("Starting cleanup process...")
         
-        if self.audio_stream is not None:
-            try:
-                if self.audio_stream.is_active():
-                    self.audio_stream.stop_stream()
-                self.audio_stream.close()
-            except Exception as e:
-                pico_logger.error(f"Error closing audio stream: {e}")
-            self.audio_stream = None
+        with self._lock:
+            if self.audio_stream is not None:
+                try:
+                    if self.audio_stream.is_active():
+                        self.audio_stream.stop_stream()
+                    self.audio_stream.close()
+                except Exception as e:
+                    pico_logger.error(f"Error closing audio stream: {e}")
+                self.audio_stream = None
 
-        if self.audio is not None:
-            try:
-                self.audio.terminate()
-            except Exception as e:
-                pico_logger.error(f"Error terminating PyAudio: {e}")
-            self.audio = None
+            if self.audio is not None:
+                try:
+                    self.audio.terminate()
+                except Exception as e:
+                    pico_logger.error(f"Error terminating PyAudio: {e}")
+                self.audio = None
 
-        if self.porcupine is not None:
-            try:
-                self.porcupine.delete()
-            except Exception as e:
-                pico_logger.error(f"Error deleting Porcupine instance: {e}")
-            self.porcupine = None
+            if self.porcupine is not None:
+                try:
+                    self.porcupine.delete()
+                except Exception as e:
+                    pico_logger.error(f"Error deleting Porcupine instance: {e}")
+                self.porcupine = None
 
         pico_logger.info("Cleanup completed")
