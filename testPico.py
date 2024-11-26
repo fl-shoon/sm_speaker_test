@@ -56,9 +56,24 @@ class PicoVoiceTester:
         self.porcupine = None
         self.audio = None
         self.audio_stream = None
+        self.gain = 5  # Amplification factor
+
+    def preprocess_audio(self, audio_data):
+        """Preprocess audio data with gain and normalization"""
+        # Convert to float32 for processing
+        float_data = audio_data.astype(np.float32) / 32768.0
+        
+        # Apply gain
+        float_data = float_data * self.gain
+        
+        # Clip to prevent overflow
+        float_data = np.clip(float_data, -1.0, 1.0)
+        
+        # Convert back to int16
+        return (float_data * 32767).astype(np.int16)
 
     def resample_audio(self, audio_data, orig_rate, new_rate):
-        """Simple resampling using linear interpolation"""
+        """Improved resampling using linear interpolation"""
         # Calculate resampling parameters
         duration = len(audio_data) / orig_rate
         time_old = np.linspace(0, duration, len(audio_data))
@@ -66,16 +81,10 @@ class PicoVoiceTester:
         
         # Perform linear interpolation
         resampled = np.interp(time_new, time_old, audio_data)
-        
-        # Normalize and convert to int16
-        resampled = np.clip(resampled, -1, 1)
-        resampled = (resampled * 32767).astype(np.int16)
-        
-        return resampled
+        return resampled.astype(np.int16)
 
     def initialize(self):
         try:
-            # Initialize Porcupine first to get required parameters
             self.porcupine = pvporcupine.create(
                 access_key=self.access_key,
                 model_path=self.model_path,
@@ -89,21 +98,18 @@ class PicoVoiceTester:
             device_index = self.device_index if self.device_index is not None else self.find_input_device()
             device_info = self.audio.get_device_info_by_index(device_index)
             
-            # Get device's native sample rate
             native_sample_rate = int(device_info['defaultSampleRate'])
             logger.info(f"Device native sample rate: {native_sample_rate}")
             logger.info(f"Porcupine required rate: {self.porcupine.sample_rate}")
             
-            # Calculate optimal buffer size
-            buffer_size = int((native_sample_rate / self.porcupine.sample_rate) * self.porcupine.frame_length)
-            buffer_size = max(buffer_size, self.porcupine.frame_length)
-            logger.info(f"Using buffer size: {buffer_size}")
+            # Use a larger buffer size to ensure enough data
+            buffer_size = self.porcupine.frame_length * 2
             
             try:
                 self.audio_stream = self.audio.open(
                     format=pyaudio.paInt16,
                     channels=1,
-                    rate=native_sample_rate,
+                    rate=self.porcupine.sample_rate,  # Use Porcupine's rate directly
                     input=True,
                     frames_per_buffer=buffer_size,
                     input_device_index=device_index,
@@ -129,6 +135,65 @@ class PicoVoiceTester:
             logger.error(f"Failed to initialize: {e}")
             self.cleanup()
             return False
+
+    def calculate_rms(self, data):
+        """Safely calculate RMS value"""
+        # Ensure we're working with float data
+        float_data = data.astype(np.float32) / 32768.0
+        
+        # Calculate RMS safely
+        square_sum = np.sum(float_data ** 2)
+        if square_sum > 0:
+            return np.sqrt(square_sum / len(float_data)) * 100  # Scale to percentage
+        return 0.0
+
+    def run(self):
+        try:
+            logger.info("Starting wake word detection...")
+            logger.info("Listening for wake words. Press Ctrl+C to exit.")
+            
+            frame_count = 0
+            monitor_interval = 50
+            silence_threshold = 1.0  # Adjusted threshold for percentage scale
+            
+            while not exit_event.is_set():
+                try:
+                    # Read audio frame
+                    pcm = self.audio_stream.read(self.porcupine.frame_length, exception_on_overflow=False)
+                    pcm_data = np.frombuffer(pcm, dtype=np.int16)
+                    
+                    # Apply preprocessing
+                    pcm_data = self.preprocess_audio(pcm_data)
+                    
+                    # Monitor audio levels
+                    frame_count += 1
+                    if frame_count % monitor_interval == 0:
+                        rms = self.calculate_rms(pcm_data)
+                        peak = np.max(np.abs(pcm_data)) / 32768.0 * 100  # Convert to percentage
+                        logger.info(f"Audio levels - RMS: {rms:.2f}%, Peak: {peak:.2f}%")
+                        
+                        if rms < silence_threshold:
+                            logger.warning("Low audio level detected - adjust microphone volume")
+                    
+                    # Process with Porcupine
+                    if len(pcm_data) >= self.porcupine.frame_length:
+                        keyword_index = self.porcupine.process(pcm_data[:self.porcupine.frame_length])
+                        if keyword_index >= 0:
+                            keyword_name = os.path.basename(self.keyword_paths[keyword_index]).replace('.ppn', '')
+                            logger.info(f"Wake word detected: {keyword_name}")
+                    
+                    time.sleep(0.01)
+
+                except Exception as loop_error:
+                    logger.error(f"Error in detection loop iteration: {loop_error}", exc_info=True)
+                    continue
+
+        except KeyboardInterrupt:
+            logger.info("Stopping wake word detection...")
+        except Exception as e:
+            logger.error(f"Error in main detection loop: {e}", exc_info=True)
+        finally:
+            self.cleanup()
 
     def find_input_device(self):
         """Find a suitable input device"""
@@ -190,66 +255,6 @@ class PicoVoiceTester:
 
         logger.info("Cleanup process completed")
 
-    def run(self):
-        try:
-            logger.info("Starting wake word detection...")
-            logger.info("Listening for wake words. Press Ctrl+C to exit.")
-            
-            frame_count = 0
-            monitor_interval = 50
-            silence_threshold = 500  # Threshold for 16-bit audio
-            
-            while not exit_event.is_set():
-                try:
-                    # Read audio frame
-                    pcm = self.audio_stream.read(self.porcupine.frame_length * 2, exception_on_overflow=False)
-                    
-                    # Convert bytes to numpy array
-                    pcm_data = np.frombuffer(pcm, dtype=np.int16)
-                    
-                    # Monitor audio levels
-                    frame_count += 1
-                    if frame_count % monitor_interval == 0:
-                        rms = np.sqrt(np.mean(np.square(pcm_data)))
-                        max_amplitude = np.max(np.abs(pcm_data))
-                        logger.info(f"Audio levels - RMS: {rms:.2f}, Max: {max_amplitude}")
-                        
-                        if rms < silence_threshold:
-                            logger.warning("Low audio level detected - adjust microphone volume")
-                    
-                    # Resample if needed
-                    device_info = self.audio.get_device_info_by_index(self.device_index or 0)
-                    native_sample_rate = int(device_info['defaultSampleRate'])
-                    
-                    if native_sample_rate != self.porcupine.sample_rate:
-                        pcm_data = self.resample_audio(
-                            pcm_data, 
-                            native_sample_rate, 
-                            self.porcupine.sample_rate
-                        )
-                    
-                    # Process with Porcupine in chunks
-                    for i in range(0, len(pcm_data), self.porcupine.frame_length):
-                        chunk = pcm_data[i:i + self.porcupine.frame_length]
-                        if len(chunk) == self.porcupine.frame_length:
-                            keyword_index = self.porcupine.process(chunk)
-                            if keyword_index >= 0:
-                                keyword_name = os.path.basename(self.keyword_paths[keyword_index]).replace('.ppn', '')
-                                logger.info(f"Wake word detected: {keyword_name}")
-                    
-                    time.sleep(0.01)
-
-                except Exception as loop_error:
-                    logger.error(f"Error in detection loop iteration: {loop_error}", exc_info=True)
-                    continue
-
-        except KeyboardInterrupt:
-            logger.info("Stopping wake word detection...")
-        except Exception as e:
-            logger.error(f"Error in main detection loop: {e}", exc_info=True)
-        finally:
-            self.cleanup()
-
 def main():
     parser = argparse.ArgumentParser(description='PicoVoice Wake Word Tester')
     
@@ -264,23 +269,25 @@ def main():
                       default=[PicoWakeWordKonnichiwa, PicoWakeWordSatoru])
     parser.add_argument('--sensitivities', nargs='+', type=float,
                       help='Detection sensitivity for each wake word (between 0 and 1)',
-                      default=[0.7, 0.7])  # Increased default sensitivity
+                      default=[0.9, 0.9])  # Increased default sensitivity
     parser.add_argument('--list-devices', action='store_true',
                       help='List all available audio devices and exit')
     parser.add_argument('--device-index', type=int,
                       help='Specify input device index to use')
+    parser.add_argument('--gain', type=float,
+                      help='Audio gain multiplier',
+                      default=5.0)
 
     args = parser.parse_args()
 
-    # List devices if requested
     if args.list_devices:
         list_audio_devices()
         sys.exit(0)
 
     # Validate sensitivities
     if len(args.sensitivities) != len(args.keyword_paths):
-        args.sensitivities = [0.5] * len(args.keyword_paths)
-        logger.warning(f"Using default sensitivity of 0.5 for all {len(args.keyword_paths)} keywords")
+        args.sensitivities = [0.9] * len(args.keyword_paths)
+        logger.warning(f"Using high sensitivity of 0.9 for all {len(args.keyword_paths)} keywords")
 
     # Set up signal handlers
     signal.signal(signal.SIGINT, signal_handler)
@@ -294,6 +301,7 @@ def main():
         sensitivities=args.sensitivities,
         device_index=args.device_index
     )
+    tester.gain = args.gain
 
     if tester.initialize():
         tester.run()
