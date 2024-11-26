@@ -36,7 +36,7 @@ async def setup_signal_handlers(cleanup_callback):
     
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, handle_signal)
-
+    
 class SpeakerCore:
     def __init__(self, args):
         self.args = args

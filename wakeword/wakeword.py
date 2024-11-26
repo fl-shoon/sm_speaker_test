@@ -13,6 +13,21 @@ import time
 logging.basicConfig(level=logging.INFO)
 wakeword_logger = logging.getLogger(__name__)
 
+def prepare_audio_device():
+    try:
+        # Force release audio device if it's in use
+        os.system('fuser -k /dev/snd/* 2>/dev/null')
+        time.sleep(0.5)
+        
+        # Reset ALSA if needed
+        os.system('alsactl kill quit')
+        os.system('alsactl init')
+        time.sleep(0.5)
+        
+        return True
+    except:
+        return False
+
 class WakeWord:
     def __init__(self, args, audio_player):
         self.audio_player = audio_player
@@ -20,7 +35,8 @@ class WakeWord:
         self.audio_stream = None
         # self.pv_recorder = None 
         self.play_trigger = None
-        self.porcupine = PicoVoiceTrigger(args)
+        if prepare_audio_device():
+            self.porcupine = PicoVoiceTrigger(args)
         self.server = args.server
         self.setting_menu = None
         # self.setting_menu = SettingMenu(audio_player=self.audio_player, serial_module=self.serial_module)
