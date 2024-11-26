@@ -226,6 +226,12 @@ class WakeWord:
                 except Exception as e:
                     wakeword_logger.error(f"Error terminating PyAudio: {e}")
 
+            if self.porcupine:
+                try:
+                    self.porcupine.cleanup()
+                except Exception as e:
+                    wakeword_logger.error(f"Error terminating PicoVoice: {e}")
+
     def __del__(self):
         """Enhanced destructor with proper cleanup"""
         if self.audio_stream or self.pyaudio_instance:

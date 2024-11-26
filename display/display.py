@@ -28,6 +28,9 @@ class DisplayModule:
         self.display_manager = display_manager
         self.fade_in_steps = 7
         self.player = None
+        self._cleanup_lock = asyncio.Lock()
+        self._is_cleaning = False
+        self._shutdown_event = asyncio.Event()
 
     def set_player_for_display(self, player):
         self.player = player
@@ -57,10 +60,14 @@ class DisplayModule:
                 await asyncio.sleep(0.01)
         except Exception as e:
             display_logger.error(f"Error in fade_in_logo: {e}")
+            await self._emergency_cleanup()
             raise
 
     async def update_gif(self, gif_path): 
         try:
+            if self._shutdown_event.is_set():  
+                return
+            
             frames = self.display_manager.prepare_gif(gif_path)
             if not frames:
                 display_logger.error("No frames loaded from GIF")
@@ -85,11 +92,13 @@ class DisplayModule:
                     await asyncio.sleep(0.1)  
                     
                 except Exception as e:
-                    display_logger.error(f"Error displaying frame {frame_index}: {e}")
+                    display_logger.error(f"Error in GIF playback: {e}")
+                    await self._emergency_cleanup()
                     raise
                     
         except Exception as e:
             display_logger.error(f"Error in update_gif: {e}")
+            await self._emergency_cleanup()
             raise
 
     async def display_image(self, image_path):
@@ -108,16 +117,65 @@ class DisplayModule:
             await self.display_manager.send_image(encoded_data)
 
         except Exception as e:
-            display_logger.warning(f"Error in display_image: {e}")
+            display_logger.error(f"Error in display_image: {e}")  
+            await self._emergency_cleanup()
+            raise
 
     async def start_listening_display(self, image_path):
         await self.display_image(image_path)
 
     async def send_white_frames(self):
-        await self.display_manager.send_white_frames()
+        """Send white frames to clear display"""
+        try:
+            white_img = Image.new('RGB', (240, 240), color='white')
+            encoded_data = self.display_manager.encode_image_to_bytes(white_img)
+            
+            for _ in range(3):
+                await self.display_manager.send_image(encoded_data)
+                await asyncio.sleep(0.05)
+        except Exception as e:
+            display_logger.error(f"Error sending white frames: {e}")
 
     async def stop_listening_display(self):
         await self.send_white_frames()
 
+    async def _emergency_cleanup(self):
+        """Emergency cleanup for unexpected shutdowns"""
+        if not self._is_cleaning:
+            self._is_cleaning = True
+            try:
+                await self.send_white_frames()
+                await asyncio.sleep(0.1)  
+                await self.cleanup_display()
+            except Exception as e:
+                display_logger.error(f"Emergency cleanup failed: {e}")
+            finally:
+                self._is_cleaning = False
+
     async def cleanup_display(self):
-        await self.display_manager.cleanup_server()
+        async with self._cleanup_lock:
+            if not self._is_cleaning:
+                self._is_cleaning = True
+                try:
+                    await self.send_white_frames()
+                    await asyncio.sleep(0.1)
+                    if self.display_manager:
+                        await self.display_manager.cleanup_server()
+                except Exception as e:
+                    display_logger.error(f"Display cleanup failed: {e}")
+                finally:
+                    self._is_cleaning = False
+
+    def __del__(self):
+        if not self._is_cleaning:
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            self._shutdown_event.set()  
+            try:
+                loop.run_until_complete(self._emergency_cleanup())
+            except Exception as e:
+                display_logger.error(f"Cleanup in destructor failed: {e}")

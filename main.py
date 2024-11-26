@@ -80,7 +80,13 @@ class Application:
             nargs='+',
             help="Sensitivities for keywords",
             type=float,
-            default=[0.5, 0.5]
+            default=[0.9, 0.9]  # Updated to use higher sensitivity
+        )
+        parser.add_argument(
+            '--gain',
+            type=float,
+            help='Audio gain multiplier',
+            default=5.0
         )
 
         # Client arguments
