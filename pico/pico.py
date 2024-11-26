@@ -2,7 +2,8 @@ from utils.define import *
 
 import logging
 import numpy as np
-import pvporcupine 
+import pvporcupine
+import pyaudio
 
 logging.basicConfig(level=logging.INFO)
 pico_logger = logging.getLogger(__name__)
@@ -12,19 +13,23 @@ class PicoVoiceTrigger:
         self.porcupine = None
         self.audio = None
         self.audio_stream = None
-        self.gain = 5.0  
+        self.gain = args.gain if hasattr(args, 'gain') else 5.0
+        self.frame_length = None  # Will be set after Porcupine initialization
         self.initialize(args)
 
     def initialize(self, args):
         """Initialize Porcupine and audio stream"""
         try:
-            # Initialize Porcupine
+            # Initialize Porcupine first to get frame_length
             self.porcupine = self._create_porcupine(
                 args.access_key, 
                 args.model_path, 
                 args.keyword_paths, 
                 args.sensitivities
             )
+            
+            # Set frame_length after Porcupine initialization
+            self.frame_length = self.porcupine.frame_length
             
             # Initialize audio
             self.audio = pyaudio.PyAudio()
@@ -34,7 +39,7 @@ class PicoVoiceTrigger:
             device_info = self.audio.get_device_info_by_index(device_index)
             
             # Use a larger buffer size
-            buffer_size = self.porcupine.frame_length * 2
+            buffer_size = self.frame_length * 2
             
             self.audio_stream = self.audio.open(
                 format=pyaudio.paInt16,
@@ -122,8 +127,8 @@ class PicoVoiceTrigger:
             processed_data = self._preprocess_audio(pcm_data)
             
             # Process with Porcupine
-            if len(processed_data) >= self.porcupine.frame_length:
-                return self.porcupine.process(processed_data[:self.porcupine.frame_length])
+            if len(processed_data) >= self.frame_length:
+                return self.porcupine.process(processed_data[:self.frame_length])
             return -1
             
         except Exception as e:
@@ -158,5 +163,3 @@ class PicoVoiceTrigger:
             self.porcupine = None
 
         pico_logger.info("Cleanup completed")
-    
-    
