@@ -54,14 +54,6 @@ class WakeWord:
                 wakeword_logger.error(f"Failed to initialize PyAudio recorder: {e}")
                 raise
     
-    # def initialize_recorder(self):
-    #     if self.pv_recorder is None:
-    #         try:
-    #             self.pv_recorder = PvRecorder(frame_length=self.porcupine.frame_length)
-    #         except Exception as e:
-    #             wakeword_logger.error(f"Failed to initialize recorder: {e}")
-    #             raise
-
     async def check_buttons(self):
         try:
             active_buttons = await self.server.get_buttons()

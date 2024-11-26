@@ -1,3 +1,4 @@
 ansible
 .python
 .DS_Store
+requirements.txt
