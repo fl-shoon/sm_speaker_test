@@ -3,7 +3,7 @@ from pico.pico import PicoVoiceTrigger
 from utils.define import *
 from utils.scheduler import run_pending
 from utils.utils import is_exit_event_set
-from .static_recorder import PvRecorder
+from audio.staticRecorder import PvRecorder
 
 import logging
 import numpy as np
