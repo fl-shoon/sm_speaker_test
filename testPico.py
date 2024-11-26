@@ -2,12 +2,10 @@ import argparse
 import logging
 import numpy as np
 import os
-import samplerate
 import signal
 import sys
 import pvporcupine
 import pyaudio
-import struct
 import time
 from threading import Event
 from utils.define import *
