@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import pvporcupine
 import pyaudio
+import time
 
 logging.basicConfig(level=logging.INFO)
 pico_logger = logging.getLogger(__name__)
@@ -14,13 +15,15 @@ class PicoVoiceTrigger:
         self.audio = None
         self.audio_stream = None
         self.gain = args.gain if hasattr(args, 'gain') else 5.0
-        self.frame_length = None  # Will be set after Porcupine initialization
+        self.frame_length = None
+        self.device_retry_count = 3
+        self.device_retry_delay = 1
         self.initialize(args)
 
     def initialize(self, args):
         """Initialize Porcupine and audio stream"""
         try:
-            # Initialize Porcupine first to get frame_length
+            # Initialize Porcupine first
             self.porcupine = self._create_porcupine(
                 args.access_key, 
                 args.model_path, 
@@ -28,55 +31,128 @@ class PicoVoiceTrigger:
                 args.sensitivities
             )
             
-            # Set frame_length after Porcupine initialization
             self.frame_length = self.porcupine.frame_length
             
-            # Initialize audio
-            self.audio = pyaudio.PyAudio()
+            # Initialize audio with retry logic
+            for attempt in range(self.device_retry_count):
+                try:
+                    if self._initialize_audio():
+                        return True
+                except Exception as e:
+                    pico_logger.warning(f"Audio initialization attempt {attempt + 1} failed: {e}")
+                    if self.audio:
+                        self.audio.terminate()
+                        self.audio = None
+                    time.sleep(self.device_retry_delay)
             
-            # Find suitable input device and setup audio stream
-            device_index = self._find_input_device()
-            device_info = self.audio.get_device_info_by_index(device_index)
-            
-            # Use a larger buffer size
-            buffer_size = self.frame_length * 2
-            
-            self.audio_stream = self.audio.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=self.porcupine.sample_rate,
-                input=True,
-                frames_per_buffer=buffer_size,
-                input_device_index=device_index,
-                stream_callback=None,
-                start=False
-            )
-            
-            self.audio_stream.start_stream()
-            pico_logger.info(f"Audio stream initialized and started")
-            return True
+            raise RuntimeError("Failed to initialize audio after multiple attempts")
             
         except Exception as e:
             pico_logger.error(f"Failed to initialize: {e}")
             self.cleanup()
             return False
 
-    def _find_input_device(self):
-        """Find a suitable input device"""
+    def _initialize_audio(self):
+        """Initialize audio subsystem"""
         try:
-            default_input = self.audio.get_default_input_device_info()
-            pico_logger.info(f"Default input device: {default_input['name']}")
+            self.audio = pyaudio.PyAudio()
             
-            # Find the first available input device
+            # Get device info
+            device_index = self._find_input_device()
+            device_info = self.audio.get_device_info_by_index(device_index)
+            
+            # Try to open the stream with different configurations
+            configs_to_try = [
+                # Config 1: Default
+                {
+                    'format': pyaudio.paInt16,
+                    'channels': 1,
+                    'rate': self.porcupine.sample_rate,
+                    'frames_per_buffer': self.frame_length * 2
+                },
+                # Config 2: Alternative buffer size
+                {
+                    'format': pyaudio.paInt16,
+                    'channels': 1,
+                    'rate': self.porcupine.sample_rate,
+                    'frames_per_buffer': 1024
+                },
+                # Config 3: Minimum configuration
+                {
+                    'format': pyaudio.paInt16,
+                    'channels': 1,
+                    'rate': self.porcupine.sample_rate,
+                    'frames_per_buffer': self.frame_length
+                }
+            ]
+            
+            last_error = None
+            for config in configs_to_try:
+                try:
+                    pico_logger.info(f"Trying audio configuration: {config}")
+                    self.audio_stream = self.audio.open(
+                        input=True,
+                        input_device_index=device_index,
+                        stream_callback=None,
+                        start=False,
+                        **config
+                    )
+                    
+                    self.audio_stream.start_stream()
+                    if self.audio_stream.is_active():
+                        pico_logger.info("Successfully initialized audio stream")
+                        return True
+                        
+                except Exception as e:
+                    last_error = e
+                    pico_logger.warning(f"Failed to initialize with config: {e}")
+                    if self.audio_stream:
+                        self.audio_stream.close()
+                        self.audio_stream = None
+            
+            if last_error:
+                raise last_error
+                
+            return False
+            
+        except Exception as e:
+            pico_logger.error(f"Error in audio initialization: {e}")
+            raise
+
+    def _find_input_device(self):
+        """Find a suitable input device with enhanced error handling"""
+        try:
+            # Try to get the default input device first
+            try:
+                default_input = self.audio.get_default_input_device_info()
+                pico_logger.info(f"Default input device: {default_input['name']}")
+                if default_input['maxInputChannels'] > 0:
+                    return default_input['index']
+            except IOError:
+                pico_logger.warning("Failed to get default input device")
+
+            # Scan all devices
             for i in range(self.audio.get_device_count()):
                 try:
                     device_info = self.audio.get_device_info_by_index(i)
                     if device_info['maxInputChannels'] > 0:
-                        pico_logger.info(f"Selected input device: {device_info['name']}")
+                        if 'USB' in device_info['name'] or 'CODEC' in device_info['name']:
+                            pico_logger.info(f"Selected USB/CODEC input device: {device_info['name']}")
+                            return i
+                except Exception as e:
+                    pico_logger.warning(f"Error checking device {i}: {e}")
+                    continue
+
+            # Fall back to first available input device
+            for i in range(self.audio.get_device_count()):
+                try:
+                    device_info = self.audio.get_device_info_by_index(i)
+                    if device_info['maxInputChannels'] > 0:
+                        pico_logger.info(f"Selected fallback input device: {device_info['name']}")
                         return i
                 except Exception:
                     continue
-            
+
             raise RuntimeError("No suitable input device found")
         except Exception as e:
             pico_logger.error(f"Error finding input device: {e}")
