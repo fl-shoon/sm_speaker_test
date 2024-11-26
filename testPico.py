@@ -1,8 +1,11 @@
 import argparse
 import logging
+import numpy as np
 import os
+import samplerate
 import signal
 import sys
+import pvporcupine
 import pyaudio
 import struct
 import time
@@ -56,6 +59,79 @@ class PicoVoiceTester:
         self.audio = None
         self.audio_stream = None
 
+    def resample_audio(self, audio_data, orig_rate, new_rate):
+        """Simple resampling using linear interpolation"""
+        # Calculate resampling parameters
+        duration = len(audio_data) / orig_rate
+        time_old = np.linspace(0, duration, len(audio_data))
+        time_new = np.linspace(0, duration, int(len(audio_data) * new_rate / orig_rate))
+        
+        # Perform linear interpolation
+        resampled = np.interp(time_new, time_old, audio_data)
+        
+        # Normalize and convert to int16
+        resampled = np.clip(resampled, -1, 1)
+        resampled = (resampled * 32767).astype(np.int16)
+        
+        return resampled
+
+    def initialize(self):
+        try:
+            # Initialize Porcupine first to get required parameters
+            self.porcupine = pvporcupine.create(
+                access_key=self.access_key,
+                model_path=self.model_path,
+                keyword_paths=self.keyword_paths,
+                sensitivities=self.sensitivities
+            )
+            
+            self.audio = pyaudio.PyAudio()
+            
+            # Find suitable input device
+            device_index = self.device_index if self.device_index is not None else self.find_input_device()
+            device_info = self.audio.get_device_info_by_index(device_index)
+            
+            # Get device's native sample rate
+            native_sample_rate = int(device_info['defaultSampleRate'])
+            logger.info(f"Device native sample rate: {native_sample_rate}")
+            logger.info(f"Porcupine required rate: {self.porcupine.sample_rate}")
+            
+            # Calculate optimal buffer size
+            buffer_size = int((native_sample_rate / self.porcupine.sample_rate) * self.porcupine.frame_length)
+            buffer_size = max(buffer_size, self.porcupine.frame_length)
+            logger.info(f"Using buffer size: {buffer_size}")
+            
+            try:
+                self.audio_stream = self.audio.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=native_sample_rate,
+                    input=True,
+                    frames_per_buffer=buffer_size,
+                    input_device_index=device_index,
+                    stream_callback=None,
+                    start=False
+                )
+                
+                self.audio_stream.start_stream()
+                logger.info(f"Successfully opened and started device {device_index}")
+                
+                if self.audio_stream.is_active():
+                    logger.info("Audio stream is active")
+                    return True
+                else:
+                    logger.error("Audio stream is not active")
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"Failed to open device {device_index}: {e}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to initialize: {e}")
+            self.cleanup()
+            return False
+
     def find_input_device(self):
         """Find a suitable input device"""
         p = pyaudio.PyAudio()
@@ -86,98 +162,7 @@ class PicoVoiceTester:
         
         p.terminate()
         raise RuntimeError("No suitable input device found")
-
-    def initialize(self):
-        """Initialize PicoVoice and audio stream with enhanced debug"""
-        try:
-            import pvporcupine
-            
-            # Verify wake word files exist
-            for path in self.keyword_paths:
-                if not os.path.exists(path):
-                    logger.error(f"Wake word file not found: {path}")
-                    return False
-                logger.info(f"Found wake word file: {path}")
-                
-            if not os.path.exists(self.model_path):
-                logger.error(f"Language model file not found: {self.model_path}")
-                return False
-            logger.info(f"Found language model file: {self.model_path}")
-            
-            logger.info(f"Initializing Porcupine with parameters:")
-            logger.info(f"Model path: {self.model_path}")
-            logger.info(f"Keyword paths: {self.keyword_paths}")
-            logger.info(f"Sensitivities: {self.sensitivities}")
-            
-            self.porcupine = pvporcupine.create(
-                access_key=self.access_key,
-                model_path=self.model_path,
-                keyword_paths=self.keyword_paths,
-                sensitivities=self.sensitivities
-            )
-            
-            logger.info(f"Porcupine initialized successfully")
-            logger.info(f"Required sample rate: {self.porcupine.sample_rate}")
-            logger.info(f"Required frame length: {self.porcupine.frame_length}")
-
-            self.audio = pyaudio.PyAudio()
-            
-            # Try to open the capture device directly
-            device_index = None
-            for i in range(self.audio.get_device_count()):
-                info = self.audio.get_device_info_by_index(i)
-                logger.info(f"Checking device {i}: {info['name']}")
-                logger.info(f"Device details: {info}")
-                
-                if ('CODEC' in info['name'] or info['maxInputChannels'] > 0):
-                    device_index = i
-                    logger.info(f"Found potential input device: {info['name']}")
-                    break
-
-            if device_index is not None:
-                try:
-                    logger.info(f"Opening audio stream with parameters:")
-                    logger.info(f"Sample rate: {self.porcupine.sample_rate}")
-                    logger.info(f"Frame length: {self.porcupine.frame_length}")
-                    logger.info(f"Device index: {device_index}")
-                    
-                    # Try with a different configuration
-                    self.audio_stream = self.audio.open(
-                        format=pyaudio.paInt16,
-                        channels=1,
-                        rate=self.porcupine.sample_rate,
-                        input=True,
-                        frames_per_buffer=self.porcupine.frame_length,
-                        input_device_index=device_index,
-                        stream_callback=None,  # Disable callback mode
-                        start=False  # Don't start immediately
-                    )
-                    
-                    # Start the stream explicitly
-                    self.audio_stream.start_stream()
-                    logger.info(f"Successfully opened and started device {device_index}")
-                    
-                    # Verify stream is active
-                    if self.audio_stream.is_active():
-                        logger.info("Audio stream is active")
-                    else:
-                        logger.error("Audio stream is not active")
-                        return False
-                    
-                    return True
-                    
-                except Exception as e:
-                    logger.error(f"Failed to open device {device_index}: {e}")
-                    return False
-
-            logger.error("No suitable input device found")
-            return False
-
-        except Exception as e:
-            logger.error(f"Failed to initialize: {e}")
-            self.cleanup()
-            return False
-
+    
     def cleanup(self):
         """Cleanup resources with enhanced error handling"""
         logger.info("Starting cleanup process...")
@@ -208,62 +193,62 @@ class PicoVoiceTester:
         logger.info("Cleanup process completed")
 
     def run(self):
-        """Main detection loop with enhanced audio monitoring"""
         try:
             logger.info("Starting wake word detection...")
             logger.info("Listening for wake words. Press Ctrl+C to exit.")
             
             frame_count = 0
-            monitor_interval = 50  # Increased monitoring frequency
-            silence_threshold = 500  # Adjust this based on your audio levels
-
+            monitor_interval = 50
+            silence_threshold = 500  # Threshold for 16-bit audio
+            
             while not exit_event.is_set():
                 try:
                     # Read audio frame
-                    try:
-                        pcm = self.audio_stream.read(self.porcupine.frame_length, exception_on_overflow=False)
-                    except IOError as io_error:
-                        logger.error(f"IOError while reading audio: {io_error}")
-                        continue
-                    except Exception as read_error:
-                        logger.error(f"Error reading audio: {read_error}")
-                        continue
-
-                    # Process audio frame
-                    try:
-                        pcm_unpacked = struct.unpack_from("h" * self.porcupine.frame_length, pcm)
-                        
-                        # Monitor audio levels more frequently
-                        frame_count += 1
-                        if frame_count % monitor_interval == 0:
-                            rms = (sum(x*x for x in pcm_unpacked)/len(pcm_unpacked))**0.5
-                            max_amplitude = max(abs(x) for x in pcm_unpacked)
-                            logger.info(f"Audio levels - RMS: {rms:.2f}, Max: {max_amplitude}")
-                            
-                            if rms < silence_threshold:
-                                logger.warning("Low audio level detected")
-                        
-                        # Process with Porcupine
-                        keyword_index = self.porcupine.process(pcm_unpacked)
-                        
-                        if keyword_index >= 0:
-                            keyword_name = os.path.basename(self.keyword_paths[keyword_index]).replace('.ppn', '')
-                            logger.info(f"Wake word detected: {keyword_name}")
-                            
-                    except Exception as process_error:
-                        logger.error(f"Error processing audio frame: {process_error}")
-                        continue
+                    pcm = self.audio_stream.read(self.porcupine.frame_length * 2, exception_on_overflow=False)
                     
-                    time.sleep(0.1)
+                    # Convert bytes to numpy array
+                    pcm_data = np.frombuffer(pcm, dtype=np.int16)
+                    
+                    # Monitor audio levels
+                    frame_count += 1
+                    if frame_count % monitor_interval == 0:
+                        rms = np.sqrt(np.mean(np.square(pcm_data)))
+                        max_amplitude = np.max(np.abs(pcm_data))
+                        logger.info(f"Audio levels - RMS: {rms:.2f}, Max: {max_amplitude}")
+                        
+                        if rms < silence_threshold:
+                            logger.warning("Low audio level detected - adjust microphone volume")
+                    
+                    # Resample if needed
+                    device_info = self.audio.get_device_info_by_index(self.device_index or 0)
+                    native_sample_rate = int(device_info['defaultSampleRate'])
+                    
+                    if native_sample_rate != self.porcupine.sample_rate:
+                        pcm_data = self.resample_audio(
+                            pcm_data, 
+                            native_sample_rate, 
+                            self.porcupine.sample_rate
+                        )
+                    
+                    # Process with Porcupine in chunks
+                    for i in range(0, len(pcm_data), self.porcupine.frame_length):
+                        chunk = pcm_data[i:i + self.porcupine.frame_length]
+                        if len(chunk) == self.porcupine.frame_length:
+                            keyword_index = self.porcupine.process(chunk)
+                            if keyword_index >= 0:
+                                keyword_name = os.path.basename(self.keyword_paths[keyword_index]).replace('.ppn', '')
+                                logger.info(f"Wake word detected: {keyword_name}")
+                    
+                    time.sleep(0.01)
 
                 except Exception as loop_error:
-                    logger.error(f"Error in detection loop iteration: {loop_error}")
+                    logger.error(f"Error in detection loop iteration: {loop_error}", exc_info=True)
                     continue
 
         except KeyboardInterrupt:
             logger.info("Stopping wake word detection...")
         except Exception as e:
-            logger.error(f"Error in main detection loop: {e}")
+            logger.error(f"Error in main detection loop: {e}", exc_info=True)
         finally:
             self.cleanup()
 
