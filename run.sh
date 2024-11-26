@@ -19,7 +19,7 @@ if ! pulseaudio --check; then
     export XDG_RUNTIME_DIR="/run/user/$(id -u)"
     mkdir -p "$XDG_RUNTIME_DIR"
     chmod 700 "$XDG_RUNTIME_DIR"
-    pulseaudio --start --exit-idle-time=-1 --system &
+    pulseaudio --start &
     sleep 2
 else
     echo "PulseAudio is already running."

@@ -4,10 +4,10 @@ from utils.define import *
 from utils.scheduler import run_pending
 from utils.utils import is_exit_event_set
 
-from pvrecorder import PvRecorder
-
+import asyncio
 import logging
 import numpy as np
+import pyaudio
 import time
 
 logging.basicConfig(level=logging.INFO)
@@ -16,7 +16,9 @@ wakeword_logger = logging.getLogger(__name__)
 class WakeWord:
     def __init__(self, args, audio_player):
         self.audio_player = audio_player
-        self.pv_recorder = None 
+        self.pyaudio_instance = None
+        self.audio_stream = None
+        # self.pv_recorder = None 
         self.play_trigger = None
         self.porcupine = PicoVoiceTrigger(args)
         self.server = args.server
@@ -24,14 +26,40 @@ class WakeWord:
         # self.setting_menu = SettingMenu(audio_player=self.audio_player, serial_module=self.serial_module)
         self.button_check_task = None
         self.calibration_task = None
+        self.initialize_pyaudio()
+
+    def initialize_pyaudio(self):
+        # PyAudio configuration
+        self.CHANNELS = 1  
+        self.RATE = 16000 
+        self.FORMAT = pyaudio.paInt16
+        self.CHUNK = self.porcupine.frame_length
         
     def initialize_recorder(self):
-        if self.pv_recorder is None:
+        if self.audio_stream is None:
             try:
-                self.pv_recorder = PvRecorder(frame_length=self.porcupine.frame_length)
+                if self.pyaudio_instance is None:
+                    self.pyaudio_instance = pyaudio.PyAudio()
+                
+                self.audio_stream = self.pyaudio_instance.open(
+                    format=self.FORMAT,
+                    channels=self.CHANNELS,
+                    rate=self.RATE,
+                    input=True,
+                    frames_per_buffer=self.CHUNK
+                )
+                wakeword_logger.info("PyAudio recorder initialized successfully")
             except Exception as e:
-                wakeword_logger.error(f"Failed to initialize recorder: {e}")
+                wakeword_logger.error(f"Failed to initialize PyAudio recorder: {e}")
                 raise
+    
+    # def initialize_recorder(self):
+    #     if self.pv_recorder is None:
+    #         try:
+    #             self.pv_recorder = PvRecorder(frame_length=self.porcupine.frame_length)
+    #         except Exception as e:
+    #             wakeword_logger.error(f"Failed to initialize recorder: {e}")
+    #             raise
 
     async def check_buttons(self):
         try:
@@ -59,7 +87,7 @@ class WakeWord:
         tasks = set()
         try:
             self.initialize_recorder()
-            self.pv_recorder.start()
+            # self.pv_recorder.start()
 
             frame_bytes = []
             calibration_interval = 5
@@ -82,29 +110,31 @@ class WakeWord:
                 if schedule_manager and schedule_manager.check_scheduled_conversation():
                     return True, WakeWordType.SCHEDULE
 
-                audio_frame = self.pv_recorder.read()
-                audio_frame_bytes = np.array(audio_frame, dtype=np.int16).tobytes()
-                frame_bytes.append(audio_frame_bytes)
+                try:
+                    audio_data = self.audio_stream.read(self.CHUNK, exception_on_overflow=False)
+                    audio_frame = np.frombuffer(audio_data, dtype=np.int16)
+                    frame_bytes.append(audio_data)
 
-                current_time = time.time() # timestamp
+                    current_time = time.time()
 
-                if current_time - last_calibration_time >= calibration_interval:
+                    if current_time - last_calibration_time >= calibration_interval:
                         frame_bytes = await self.calibrate_audio(py_recorder, frame_bytes)
                         last_calibration_time = current_time
 
-                detections = self.porcupine.process(audio_frame)
-                wake_word_triggered = detections >= 0
-                
-                if wake_word_triggered:
-                    wakeword_logger.info("Wake word detected")
-                    response_task = asyncio.create_task(
-                        self.audio_player.play_audio(ResponseAudio)
-                    )
-                    tasks.add(response_task)
-                    await response_task
-                    return True, WakeWordType.TRIGGER
-                
-                if current_time - last_button_check_time >= button_check_interval:
+                    # Process audio frame for wake word detection
+                    detections = self.porcupine.process(audio_frame)
+                    wake_word_triggered = detections >= 0
+                    
+                    if wake_word_triggered:
+                        wakeword_logger.info("Wake word detected")
+                        response_task = asyncio.create_task(
+                            self.audio_player.play_audio(ResponseAudio)
+                        )
+                        tasks.add(response_task)
+                        await response_task
+                        return True, WakeWordType.TRIGGER
+                    
+                    if current_time - last_button_check_time >= button_check_interval:
                         button_task = asyncio.create_task(self.check_buttons())
                         tasks.add(button_task)
                         res = await button_task
@@ -117,6 +147,46 @@ class WakeWord:
                             await exit_task
                         
                         last_button_check_time = current_time
+
+                    await asyncio.sleep(0.01)
+                except IOError as e:
+                    wakeword_logger.error(f"Error reading audio stream: {e}")
+                    continue
+                # audio_frame = self.pv_recorder.read()
+                # audio_frame_bytes = np.array(audio_frame, dtype=np.int16).tobytes()
+                # frame_bytes.append(audio_frame_bytes)
+
+                # current_time = time.time() # timestamp
+
+                # if current_time - last_calibration_time >= calibration_interval:
+                #         frame_bytes = await self.calibrate_audio(py_recorder, frame_bytes)
+                #         last_calibration_time = current_time
+
+                # detections = self.porcupine.process(audio_frame)
+                # wake_word_triggered = detections >= 0
+                
+                # if wake_word_triggered:
+                #     wakeword_logger.info("Wake word detected")
+                #     response_task = asyncio.create_task(
+                #         self.audio_player.play_audio(ResponseAudio)
+                #     )
+                #     tasks.add(response_task)
+                #     await response_task
+                #     return True, WakeWordType.TRIGGER
+                
+                # if current_time - last_button_check_time >= button_check_interval:
+                #         button_task = asyncio.create_task(self.check_buttons())
+                #         tasks.add(button_task)
+                #         res = await button_task
+                        
+                #         if res == 'exit':
+                #             exit_task = asyncio.create_task(
+                #                 self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
+                #             )
+                #             tasks.add(exit_task)
+                #             await exit_task
+                        
+                #         last_button_check_time = current_time
 
                 await asyncio.sleep(0.01)
 
