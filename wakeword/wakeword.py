@@ -4,7 +4,7 @@ from utils.define import *
 from utils.scheduler import run_pending
 from utils.utils import is_exit_event_set
 
-from pvrecorder import PvRecorder
+from audio.staticRecorder import PvRecorder
 
 import logging
 import numpy as np
@@ -71,7 +71,6 @@ class WakeWord:
     async def listen_for_wake_word(self, schedule_manager, py_recorder):
         tasks = set()
         try:
-            # Initialize recorder with proper error handling
             recorder_initialized = await self.initialize_recorder()
             if not recorder_initialized and not self.fallback_mode:
                 return False, WakeWordType.OTHER
