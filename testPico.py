@@ -88,7 +88,7 @@ class PicoVoiceTester:
         raise RuntimeError("No suitable input device found")
 
     def initialize(self):
-        """Initialize PicoVoice and audio stream with explicit USB audio configuration"""
+        """Initialize PicoVoice and audio stream with explicit channel configuration"""
         try:
             import pvporcupine
             self.porcupine = pvporcupine.create(
@@ -100,32 +100,65 @@ class PicoVoiceTester:
 
             self.audio = pyaudio.PyAudio()
             
-            # Try to find the USB Audio CODEC device
+            # Find the USB Audio CODEC device
             device_index = None
+            device_info = None
+            
+            # First try to find by name
             for i in range(self.audio.get_device_count()):
-                device_info = self.audio.get_device_info_by_index(i)
-                logger.info(f"Checking device {i}: {device_info['name']}")
-                if 'USB AUDIO  CODEC' in device_info['name']:
+                info = self.audio.get_device_info_by_index(i)
+                logger.info(f"Checking device {i}: {info['name']}")
+                if 'USB AUDIO  CODEC' in info['name']:
                     device_index = i
+                    device_info = info
                     break
             
             if device_index is None:
                 logger.error("Could not find USB Audio CODEC device")
                 return False
 
-            # Configure audio stream with explicit parameters
-            self.audio_stream = self.audio.open(
-                rate=self.porcupine.sample_rate,
-                channels=1,
-                format=pyaudio.paInt16,
-                input=True,
-                input_device_index=device_index,
-                frames_per_buffer=self.porcupine.frame_length,
-                stream_callback=None
-            )
+            logger.info(f"Selected device info: {device_info}")
+            
+            # Configure audio stream with explicit parameters for mono input
+            try:
+                self.audio_stream = self.audio.open(
+                    rate=int(self.porcupine.sample_rate),  # Explicit integer conversion
+                    channels=1,  # Mono input
+                    format=pyaudio.paInt16,
+                    input=True,
+                    input_device_index=device_index,
+                    frames_per_buffer=self.porcupine.frame_length,
+                    start=False,  # Don't start the stream yet
+                )
+                
+                # Try to start the stream explicitly
+                self.audio_stream.start_stream()
+                
+                logger.info("Audio stream initialized and started successfully")
+                return True
 
-            logger.info(f"PicoVoice and audio stream initialized successfully using device index {device_index}")
-            return True
+            except Exception as audio_error:
+                logger.error(f"Error configuring audio stream: {audio_error}")
+                
+                # Try alternate configuration if the first attempt failed
+                try:
+                    logger.info("Trying alternate audio configuration...")
+                    self.audio_stream = self.audio.open(
+                        rate=int(self.porcupine.sample_rate),
+                        channels=1,
+                        format=pyaudio.paInt16,
+                        input=True,
+                        input_device_index=device_index,
+                        frames_per_buffer=1024,  # Use a standard buffer size
+                        stream_callback=None
+                    )
+                    
+                    logger.info("Alternate audio configuration successful")
+                    return True
+                    
+                except Exception as alt_error:
+                    logger.error(f"Alternate configuration failed: {alt_error}")
+                    return False
 
         except Exception as e:
             logger.error(f"Failed to initialize: {e}")
@@ -133,12 +166,13 @@ class PicoVoiceTester:
             return False
 
     def cleanup(self):
-        """Cleanup resources"""
-        logger.info("Cleaning up resources...")
+        """Cleanup resources with enhanced error handling"""
+        logger.info("Starting cleanup process...")
         
         if self.audio_stream is not None:
             try:
-                self.audio_stream.stop_stream()
+                if self.audio_stream.is_active():
+                    self.audio_stream.stop_stream()
                 self.audio_stream.close()
             except Exception as e:
                 logger.error(f"Error closing audio stream: {e}")
@@ -157,6 +191,8 @@ class PicoVoiceTester:
             except Exception as e:
                 logger.error(f"Error deleting Porcupine instance: {e}")
             self.porcupine = None
+
+        logger.info("Cleanup process completed")
 
     def run(self):
         """Main detection loop"""
