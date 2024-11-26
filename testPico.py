@@ -88,9 +88,22 @@ class PicoVoiceTester:
         raise RuntimeError("No suitable input device found")
 
     def initialize(self):
-        """Initialize PicoVoice and audio stream with debug information"""
+        """Initialize PicoVoice and audio stream with enhanced debug"""
         try:
             import pvporcupine
+            
+            # Verify wake word files exist
+            for path in self.keyword_paths:
+                if not os.path.exists(path):
+                    logger.error(f"Wake word file not found: {path}")
+                    return False
+                logger.info(f"Found wake word file: {path}")
+                
+            if not os.path.exists(self.model_path):
+                logger.error(f"Language model file not found: {self.model_path}")
+                return False
+            logger.info(f"Found language model file: {self.model_path}")
+            
             logger.info(f"Initializing Porcupine with parameters:")
             logger.info(f"Model path: {self.model_path}")
             logger.info(f"Keyword paths: {self.keyword_paths}")
@@ -121,42 +134,44 @@ class PicoVoiceTester:
                     logger.info(f"Found potential input device: {info['name']}")
                     break
 
-            if device_index is None:
-                try:
-                    logger.info("Attempting to open default ALSA capture device")
-                    self.audio_stream = self.audio.open(
-                        format=pyaudio.paInt16,
-                        channels=1,
-                        rate=self.porcupine.sample_rate,
-                        input=True,
-                        frames_per_buffer=self.porcupine.frame_length,
-                        input_device_index=None
-                    )
-                    logger.info("Successfully opened default capture device")
-                    return True
-                except Exception as e:
-                    logger.error(f"Failed to open default capture device: {e}")
-                    return False
-            else:
+            if device_index is not None:
                 try:
                     logger.info(f"Opening audio stream with parameters:")
                     logger.info(f"Sample rate: {self.porcupine.sample_rate}")
                     logger.info(f"Frame length: {self.porcupine.frame_length}")
                     logger.info(f"Device index: {device_index}")
                     
+                    # Try with a different configuration
                     self.audio_stream = self.audio.open(
                         format=pyaudio.paInt16,
                         channels=1,
                         rate=self.porcupine.sample_rate,
                         input=True,
                         frames_per_buffer=self.porcupine.frame_length,
-                        input_device_index=device_index
+                        input_device_index=device_index,
+                        stream_callback=None,  # Disable callback mode
+                        start=False  # Don't start immediately
                     )
-                    logger.info(f"Successfully opened device {device_index}")
+                    
+                    # Start the stream explicitly
+                    self.audio_stream.start_stream()
+                    logger.info(f"Successfully opened and started device {device_index}")
+                    
+                    # Verify stream is active
+                    if self.audio_stream.is_active():
+                        logger.info("Audio stream is active")
+                    else:
+                        logger.error("Audio stream is not active")
+                        return False
+                    
                     return True
+                    
                 except Exception as e:
                     logger.error(f"Failed to open device {device_index}: {e}")
                     return False
+
+            logger.error("No suitable input device found")
+            return False
 
         except Exception as e:
             logger.error(f"Failed to initialize: {e}")
@@ -193,14 +208,14 @@ class PicoVoiceTester:
         logger.info("Cleanup process completed")
 
     def run(self):
-        """Main detection loop with audio level monitoring"""
+        """Main detection loop with enhanced audio monitoring"""
         try:
             logger.info("Starting wake word detection...")
             logger.info("Listening for wake words. Press Ctrl+C to exit.")
             
-            # Add counter for audio level monitoring
             frame_count = 0
-            monitor_interval = 100  # Monitor audio level every 100 frames
+            monitor_interval = 50  # Increased monitoring frequency
+            silence_threshold = 500  # Adjust this based on your audio levels
 
             while not exit_event.is_set():
                 try:
@@ -216,15 +231,17 @@ class PicoVoiceTester:
 
                     # Process audio frame
                     try:
-                        # Convert bytes to PCM values
                         pcm_unpacked = struct.unpack_from("h" * self.porcupine.frame_length, pcm)
                         
-                        # Monitor audio levels periodically
+                        # Monitor audio levels more frequently
                         frame_count += 1
                         if frame_count % monitor_interval == 0:
-                            # Calculate RMS of the audio frame
                             rms = (sum(x*x for x in pcm_unpacked)/len(pcm_unpacked))**0.5
-                            logger.info(f"Audio level (RMS): {rms}")
+                            max_amplitude = max(abs(x) for x in pcm_unpacked)
+                            logger.info(f"Audio levels - RMS: {rms:.2f}, Max: {max_amplitude}")
+                            
+                            if rms < silence_threshold:
+                                logger.warning("Low audio level detected")
                         
                         # Process with Porcupine
                         keyword_index = self.porcupine.process(pcm_unpacked)
