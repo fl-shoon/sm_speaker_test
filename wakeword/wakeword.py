@@ -27,6 +27,7 @@ class WakeWord:
         self.button_check_task = None
         self.calibration_task = None
         self.initialize_pyaudio()
+        self._cleanup_lock = asyncio.Lock()
 
     def initialize_pyaudio(self):
         # PyAudio configuration
@@ -207,11 +208,39 @@ class WakeWord:
 
         return False, None
     
-    def cleanup_recorder(self):
-        if self.pv_recorder:
-            try:
-                self.pv_recorder.stop()
-                self.pv_recorder.delete()
-                self.pv_recorder = None
-            except Exception as e:
-                wakeword_logger.error(f"Error cleaning up recorder: {e}")
+    async def cleanup_recorder(self):
+        """Enhanced cleanup with proper locking"""
+        async with self._cleanup_lock:
+            if self.audio_stream:
+                try:
+                    self.audio_stream.stop_stream()
+                    self.audio_stream.close()
+                    self.audio_stream = None
+                except Exception as e:
+                    wakeword_logger.error(f"Error stopping audio stream: {e}")
+
+            if self.pyaudio_instance:
+                try:
+                    self.pyaudio_instance.terminate()
+                    self.pyaudio_instance = None
+                except Exception as e:
+                    wakeword_logger.error(f"Error terminating PyAudio: {e}")
+
+    def __del__(self):
+        """Enhanced destructor with proper cleanup"""
+        if self.audio_stream or self.pyaudio_instance:
+            if asyncio.get_event_loop().is_running():
+                asyncio.create_task(self.cleanup_recorder())
+            else:
+                # Synchronous cleanup as fallback
+                if self.audio_stream:
+                    try:
+                        self.audio_stream.stop_stream()
+                        self.audio_stream.close()
+                    except:
+                        pass
+                if self.pyaudio_instance:
+                    try:
+                        self.pyaudio_instance.terminate()
+                    except:
+                        pass

@@ -30,6 +30,7 @@ class AudioPlayer:
         self.current_volume = 0.5
         self.current_stream = None
         self.pyaudio_instance = None
+        self._cleanup_lock = asyncio.Lock()
         
         try:
             with suppress_stdout_stderr():
@@ -158,12 +159,33 @@ class AudioPlayer:
                 print(f"Error stopping playback: {e}")
                 self.audio_available = False
 
+    async def cleanup(self):
+        """Async cleanup method"""
+        async with self._cleanup_lock:
+            if self.current_stream:
+                try:
+                    self.current_stream.stop_stream()
+                    self.current_stream.close()
+                    self.current_stream = None
+                except Exception as e:
+                    print(f"Error closing stream: {e}")
+            
+            if self.pyaudio_instance:
+                try:
+                    self.pyaudio_instance.terminate()
+                    self.pyaudio_instance = None
+                except Exception as e:
+                    print(f"Error terminating PyAudio: {e}")
+
     def __del__(self):
-        """Cleanup resources but don't terminate PyAudio instance"""
-        if self.current_stream:
-            try:
-                self.current_stream.stop_stream()
-                self.current_stream.close()
-            except:
-                pass
-            self.current_stream = None
+        """Ensure cleanup runs"""
+        if self.current_stream or self.pyaudio_instance:
+            if asyncio.get_event_loop().is_running():
+                asyncio.create_task(self.cleanup())
+            else:
+                # Synchronous cleanup as fallback
+                if self.current_stream:
+                    self.current_stream.stop_stream()
+                    self.current_stream.close()
+                if self.pyaudio_instance:
+                    self.pyaudio_instance.terminate()

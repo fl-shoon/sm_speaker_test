@@ -121,13 +121,18 @@ class SpeakerCore:
                     except asyncio.CancelledError:
                         pass
             
-            # Clean up components
-            await cleanup_resources(
-                self.wake_word,
-                self.display,
-                self.audio_player,
-                self.py_recorder
-            )
+            # Clean up components in specific order
+            if self.wake_word:
+                await self.wake_word.cleanup_recorder()
+            
+            if self.audio_player:
+                await self.audio_player.cleanup()
+                
+            if self.py_recorder:
+                self.py_recorder.stop_stream()
+            
+            if self.display:
+                await self.display.cleanup_display()
             
         except Exception as e:
             core_logger.error(f"Error during cleanup: {e}")
