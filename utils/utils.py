@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import serial.tools.list_ports
 import wave
 
 logging.basicConfig(level=logging.INFO)
