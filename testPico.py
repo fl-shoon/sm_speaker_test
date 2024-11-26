@@ -88,15 +88,24 @@ class PicoVoiceTester:
         raise RuntimeError("No suitable input device found")
 
     def initialize(self):
-        """Initialize PicoVoice and audio stream with direct ALSA configuration"""
+        """Initialize PicoVoice and audio stream with debug information"""
         try:
             import pvporcupine
+            logger.info(f"Initializing Porcupine with parameters:")
+            logger.info(f"Model path: {self.model_path}")
+            logger.info(f"Keyword paths: {self.keyword_paths}")
+            logger.info(f"Sensitivities: {self.sensitivities}")
+            
             self.porcupine = pvporcupine.create(
                 access_key=self.access_key,
                 model_path=self.model_path,
                 keyword_paths=self.keyword_paths,
                 sensitivities=self.sensitivities
             )
+            
+            logger.info(f"Porcupine initialized successfully")
+            logger.info(f"Required sample rate: {self.porcupine.sample_rate}")
+            logger.info(f"Required frame length: {self.porcupine.frame_length}")
 
             self.audio = pyaudio.PyAudio()
             
@@ -107,14 +116,12 @@ class PicoVoiceTester:
                 logger.info(f"Checking device {i}: {info['name']}")
                 logger.info(f"Device details: {info}")
                 
-                # Look for the CODEC device or any device with input channels
                 if ('CODEC' in info['name'] or info['maxInputChannels'] > 0):
                     device_index = i
                     logger.info(f"Found potential input device: {info['name']}")
                     break
 
             if device_index is None:
-                # Try to open the default ALSA capture device
                 try:
                     logger.info("Attempting to open default ALSA capture device")
                     self.audio_stream = self.audio.open(
@@ -123,7 +130,7 @@ class PicoVoiceTester:
                         rate=self.porcupine.sample_rate,
                         input=True,
                         frames_per_buffer=self.porcupine.frame_length,
-                        input_device_index=None  # Use default input device
+                        input_device_index=None
                     )
                     logger.info("Successfully opened default capture device")
                     return True
@@ -132,7 +139,11 @@ class PicoVoiceTester:
                     return False
             else:
                 try:
-                    # Try using the found device
+                    logger.info(f"Opening audio stream with parameters:")
+                    logger.info(f"Sample rate: {self.porcupine.sample_rate}")
+                    logger.info(f"Frame length: {self.porcupine.frame_length}")
+                    logger.info(f"Device index: {device_index}")
+                    
                     self.audio_stream = self.audio.open(
                         format=pyaudio.paInt16,
                         channels=1,
@@ -182,14 +193,18 @@ class PicoVoiceTester:
         logger.info("Cleanup process completed")
 
     def run(self):
-        """Main detection loop with error handling"""
+        """Main detection loop with audio level monitoring"""
         try:
             logger.info("Starting wake word detection...")
             logger.info("Listening for wake words. Press Ctrl+C to exit.")
+            
+            # Add counter for audio level monitoring
+            frame_count = 0
+            monitor_interval = 100  # Monitor audio level every 100 frames
 
             while not exit_event.is_set():
                 try:
-                    # Read audio frame with error handling
+                    # Read audio frame
                     try:
                         pcm = self.audio_stream.read(self.porcupine.frame_length, exception_on_overflow=False)
                     except IOError as io_error:
@@ -201,12 +216,23 @@ class PicoVoiceTester:
 
                     # Process audio frame
                     try:
-                        pcm = struct.unpack_from("h" * self.porcupine.frame_length, pcm)
-                        keyword_index = self.porcupine.process(pcm)
+                        # Convert bytes to PCM values
+                        pcm_unpacked = struct.unpack_from("h" * self.porcupine.frame_length, pcm)
+                        
+                        # Monitor audio levels periodically
+                        frame_count += 1
+                        if frame_count % monitor_interval == 0:
+                            # Calculate RMS of the audio frame
+                            rms = (sum(x*x for x in pcm_unpacked)/len(pcm_unpacked))**0.5
+                            logger.info(f"Audio level (RMS): {rms}")
+                        
+                        # Process with Porcupine
+                        keyword_index = self.porcupine.process(pcm_unpacked)
                         
                         if keyword_index >= 0:
                             keyword_name = os.path.basename(self.keyword_paths[keyword_index]).replace('.ppn', '')
                             logger.info(f"Wake word detected: {keyword_name}")
+                            
                     except Exception as process_error:
                         logger.error(f"Error processing audio frame: {process_error}")
                         continue
@@ -238,7 +264,7 @@ def main():
                       default=[PicoWakeWordKonnichiwa, PicoWakeWordSatoru])
     parser.add_argument('--sensitivities', nargs='+', type=float,
                       help='Detection sensitivity for each wake word (between 0 and 1)',
-                      default=[0.5, 0.5])
+                      default=[0.7, 0.7])  # Increased default sensitivity
     parser.add_argument('--list-devices', action='store_true',
                       help='List all available audio devices and exit')
     parser.add_argument('--device-index', type=int,
