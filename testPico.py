@@ -46,9 +46,8 @@ def list_audio_devices():
     return info
 
 class PicoVoiceTester:
-    def __init__(self, access_key, library_path, model_path, keyword_paths, sensitivities, device_index=None):
+    def __init__(self, access_key, model_path, keyword_paths, sensitivities, device_index=None):
         self.access_key = access_key
-        self.library_path = library_path
         self.model_path = model_path
         self.keyword_paths = keyword_paths
         self.sensitivities = sensitivities
@@ -112,7 +111,6 @@ class PicoVoiceTester:
             
             self.porcupine = pvporcupine.create(
                 access_key=self.access_key,
-                library_path=self.library_path,
                 model_path=self.model_path,
                 keyword_paths=self.keyword_paths,
                 sensitivities=self.sensitivities
@@ -275,9 +273,6 @@ def main():
     parser.add_argument('--access_key',
                       help='AccessKey obtained from Picovoice Console',
                       default=os.environ.get("PICO_ACCESS_KEY"))
-    parser.add_argument('--library_path',
-                      help='Path to the Porcupine library file',
-                      default=PicoLangLib)
     parser.add_argument('--model_path',
                       help='Path to the Porcupine model file',
                       default=PicoLangModel)
@@ -311,7 +306,6 @@ def main():
     # Initialize and run tester
     tester = PicoVoiceTester(
         access_key=args.access_key,
-        library_path = args.library_path,
         model_path=args.model_path,
         keyword_paths=args.keyword_paths,
         sensitivities=args.sensitivities,
