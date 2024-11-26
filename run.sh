@@ -13,18 +13,6 @@ echo "Current directory: $(pwd)"
 # Add system Python packages to PYTHONPATH
 export PYTHONPATH="/usr/lib/python3.12/site-packages:$PYTHONPATH"
 
-# PulseAudio setup
-if ! pulseaudio --check; then
-    echo "Starting PulseAudio..."
-    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-    mkdir -p "$XDG_RUNTIME_DIR"
-    chmod 700 "$XDG_RUNTIME_DIR"
-    pulseaudio --start --system &
-    sleep 2
-else
-    echo "PulseAudio is already running."
-fi
-
 cleanup() {
     echo "Cleaning up..."
     if [ ! -z "$PYTHON_PID" ]; then
@@ -42,7 +30,7 @@ source .venv/bin/activate --system-site-packages
 echo "Verifying required Python modules..."
 python3 -c "
 import sys
-required_modules = ['pygame', 'pvporcupine', 'pyaudio', 'numpy']
+required_modules = ['pvporcupine', 'pyaudio', 'numpy']
 missing_modules = []
 for module in required_modules:
     try:
