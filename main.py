@@ -1,5 +1,5 @@
 from core import SpeakerCore
-from fireclient.fireclient import FireClient
+# from fireclient.fireclient import FireClient
 from aiclient.conversation import ConversationClient
 from transmission.serverManager import ServerManager
 from utils.define import *
@@ -42,11 +42,11 @@ class Application:
             
             # Initialize core components
             self.speaker = SpeakerCore(args)
-            self.fire_client = FireClient()
-            self.schedule_manager = ScheduleManager(
-                server_manager=self.server_manager,
-                fire_client=self.fire_client
-            )
+            # self.fire_client = FireClient()
+            # self.schedule_manager = ScheduleManager(
+            #     server_manager=self.server_manager,
+            #     fire_client=self.fire_client
+            # )
             self.ai_client.setAudioPlayer(self.speaker.audio_player)
             
             return True
@@ -129,7 +129,8 @@ class Application:
                 return
             
             # Run the speaker core
-            await self.speaker.run(self.schedule_manager)
+            # await self.speaker.run(self.schedule_manager)
+            await self.speaker.run(None)
             
         except KeyboardInterrupt:
             main_logger.info("KeyboardInterrupt received, initiating shutdown...")

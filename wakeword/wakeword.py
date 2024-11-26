@@ -79,8 +79,8 @@ class WakeWord:
             while not is_exit_event_set():
                 run_pending()
 
-                if schedule_manager.check_scheduled_conversation():
-                    return True, WakeWordType.SCHEDULE
+                # if schedule_manager.check_scheduled_conversation():
+                #     return True, WakeWordType.SCHEDULE
 
                 audio_frame = self.pv_recorder.read()
                 audio_frame_bytes = np.array(audio_frame, dtype=np.int16).tobytes()
