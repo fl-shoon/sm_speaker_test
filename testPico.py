@@ -88,7 +88,7 @@ class PicoVoiceTester:
         raise RuntimeError("No suitable input device found")
 
     def initialize(self):
-        """Initialize PicoVoice and audio stream with explicit channel configuration"""
+        """Initialize PicoVoice and audio stream with direct ALSA configuration"""
         try:
             import pvporcupine
             self.porcupine = pvporcupine.create(
@@ -100,64 +100,51 @@ class PicoVoiceTester:
 
             self.audio = pyaudio.PyAudio()
             
-            # Find the USB Audio CODEC device
+            # Try to open the capture device directly
             device_index = None
-            device_info = None
-            
-            # First try to find by name
             for i in range(self.audio.get_device_count()):
                 info = self.audio.get_device_info_by_index(i)
                 logger.info(f"Checking device {i}: {info['name']}")
-                if 'USB AUDIO  CODEC' in info['name']:
+                logger.info(f"Device details: {info}")
+                
+                # Look for the CODEC device or any device with input channels
+                if ('CODEC' in info['name'] or info['maxInputChannels'] > 0):
                     device_index = i
-                    device_info = info
+                    logger.info(f"Found potential input device: {info['name']}")
                     break
-            
+
             if device_index is None:
-                logger.error("Could not find USB Audio CODEC device")
-                return False
-
-            logger.info(f"Selected device info: {device_info}")
-            
-            # Configure audio stream with explicit parameters for mono input
-            try:
-                self.audio_stream = self.audio.open(
-                    rate=int(self.porcupine.sample_rate),  # Explicit integer conversion
-                    channels=1,  # Mono input
-                    format=pyaudio.paInt16,
-                    input=True,
-                    input_device_index=device_index,
-                    frames_per_buffer=self.porcupine.frame_length,
-                    start=False,  # Don't start the stream yet
-                )
-                
-                # Try to start the stream explicitly
-                self.audio_stream.start_stream()
-                
-                logger.info("Audio stream initialized and started successfully")
-                return True
-
-            except Exception as audio_error:
-                logger.error(f"Error configuring audio stream: {audio_error}")
-                
-                # Try alternate configuration if the first attempt failed
+                # Try to open the default ALSA capture device
                 try:
-                    logger.info("Trying alternate audio configuration...")
+                    logger.info("Attempting to open default ALSA capture device")
                     self.audio_stream = self.audio.open(
-                        rate=int(self.porcupine.sample_rate),
-                        channels=1,
                         format=pyaudio.paInt16,
+                        channels=1,
+                        rate=self.porcupine.sample_rate,
                         input=True,
-                        input_device_index=device_index,
-                        frames_per_buffer=1024,  # Use a standard buffer size
-                        stream_callback=None
+                        frames_per_buffer=self.porcupine.frame_length,
+                        input_device_index=None  # Use default input device
                     )
-                    
-                    logger.info("Alternate audio configuration successful")
+                    logger.info("Successfully opened default capture device")
                     return True
-                    
-                except Exception as alt_error:
-                    logger.error(f"Alternate configuration failed: {alt_error}")
+                except Exception as e:
+                    logger.error(f"Failed to open default capture device: {e}")
+                    return False
+            else:
+                try:
+                    # Try using the found device
+                    self.audio_stream = self.audio.open(
+                        format=pyaudio.paInt16,
+                        channels=1,
+                        rate=self.porcupine.sample_rate,
+                        input=True,
+                        frames_per_buffer=self.porcupine.frame_length,
+                        input_device_index=device_index
+                    )
+                    logger.info(f"Successfully opened device {device_index}")
+                    return True
+                except Exception as e:
+                    logger.error(f"Failed to open device {device_index}: {e}")
                     return False
 
         except Exception as e:
@@ -195,30 +182,45 @@ class PicoVoiceTester:
         logger.info("Cleanup process completed")
 
     def run(self):
-        """Main detection loop"""
+        """Main detection loop with error handling"""
         try:
             logger.info("Starting wake word detection...")
             logger.info("Listening for wake words. Press Ctrl+C to exit.")
 
             while not exit_event.is_set():
-                # Read audio frame
-                pcm = self.audio_stream.read(self.porcupine.frame_length, exception_on_overflow=False)
-                pcm = struct.unpack_from("h" * self.porcupine.frame_length, pcm)
+                try:
+                    # Read audio frame with error handling
+                    try:
+                        pcm = self.audio_stream.read(self.porcupine.frame_length, exception_on_overflow=False)
+                    except IOError as io_error:
+                        logger.error(f"IOError while reading audio: {io_error}")
+                        continue
+                    except Exception as read_error:
+                        logger.error(f"Error reading audio: {read_error}")
+                        continue
 
-                # Process audio frame
-                keyword_index = self.porcupine.process(pcm)
-                
-                # Wake word detected
-                if keyword_index >= 0:
-                    keyword_name = os.path.basename(self.keyword_paths[keyword_index]).replace('.ppn', '')
-                    logger.info(f"Wake word detected: {keyword_name}")
+                    # Process audio frame
+                    try:
+                        pcm = struct.unpack_from("h" * self.porcupine.frame_length, pcm)
+                        keyword_index = self.porcupine.process(pcm)
+                        
+                        if keyword_index >= 0:
+                            keyword_name = os.path.basename(self.keyword_paths[keyword_index]).replace('.ppn', '')
+                            logger.info(f"Wake word detected: {keyword_name}")
+                    except Exception as process_error:
+                        logger.error(f"Error processing audio frame: {process_error}")
+                        continue
                     
-                time.sleep(0.1)
+                    time.sleep(0.1)
+
+                except Exception as loop_error:
+                    logger.error(f"Error in detection loop iteration: {loop_error}")
+                    continue
 
         except KeyboardInterrupt:
             logger.info("Stopping wake word detection...")
         except Exception as e:
-            logger.error(f"Error in detection loop: {e}")
+            logger.error(f"Error in main detection loop: {e}")
         finally:
             self.cleanup()
 
