@@ -110,13 +110,13 @@ class PicoVoiceTester:
 def main():
     parser = argparse.ArgumentParser(description='PicoVoice Wake Word Tester')
     
-    parser.add_argument('--access_key', required=True,
+    parser.add_argument('--access_key',
                       help='AccessKey obtained from Picovoice Console',
                       default=os.environ.get("PICO_ACCESS_KEY"))
-    parser.add_argument('--model_path', required=True,
+    parser.add_argument('--model_path',
                       help='Path to the Porcupine model file',
                       default=PicoLangModel)
-    parser.add_argument('--keyword_paths', required=True, nargs='+',
+    parser.add_argument('--keyword_paths', nargs='+',
                       help='Paths to keyword model files',
                       default=[PicoWakeWordKonnichiwa, PicoWakeWordSatoru])
     parser.add_argument('--sensitivities', nargs='+', type=float,
