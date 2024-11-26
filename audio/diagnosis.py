@@ -1,63 +1,62 @@
 import pyaudio
-import sys
-import time
+import wave
+import logging
 
-def diagnose_audio():
-    print("\n=== Audio System Diagnostic ===\n")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def test_audio_device():
+    """Test audio device recording"""
+    p = pyaudio.PyAudio()
     
     try:
-        print("Initializing PyAudio...")
-        p = pyaudio.PyAudio()
-        print("PyAudio initialized successfully")
-        
-        print("\nSystem Information:")
-        print(f"PyAudio version: {pyaudio.get_portaudio_version()}")
-        print(f"Default input device index: {p.get_default_input_device_info().get('index', 'Unknown')}")
-        
-        print("\nAvailable Devices:")
+        # List all devices
+        logger.info("\nAvailable audio devices:")
         for i in range(p.get_device_count()):
             try:
                 dev_info = p.get_device_info_by_index(i)
-                print(f"\nDevice {i}:")
-                print(f"  Name: {dev_info['name']}")
-                print(f"  Input channels: {dev_info['maxInputChannels']}")
-                print(f"  Output channels: {dev_info['maxOutputChannels']}")
-                print(f"  Default sample rate: {dev_info['defaultSampleRate']}")
-                print(f"  Host API: {p.get_host_api_info_by_index(dev_info['hostApi'])['name']}")
+                logger.info(f"Device {i}: {dev_info['name']}")
+                logger.info(f"  Input channels: {dev_info['maxInputChannels']}")
+                logger.info(f"  Sample rate: {dev_info['defaultSampleRate']}")
             except Exception as e:
-                print(f"\nError getting info for device {i}: {e}")
+                logger.error(f"Error getting device info for index {i}: {e}")
         
-        print("\nTesting Audio Stream...")
-        # Try to open a test stream
-        try:
-            stream = p.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=16000,
-                input=True,
-                frames_per_buffer=512,
-                start=False
-            )
-            print("Stream opened successfully")
-            
-            stream.start_stream()
-            print("Stream started successfully")
-            
-            print("Testing audio capture...")
+        # Try to record some audio
+        logger.info("\nTesting recording...")
+        
+        stream = p.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=16000,
+            input=True,
+            frames_per_buffer=512,
+            input_device_index=0  # Try device 0
+        )
+        
+        frames = []
+        for i in range(0, 48):  # Record for ~1.5 seconds
             data = stream.read(512, exception_on_overflow=False)
-            print(f"Successfully captured {len(data)} bytes of audio data")
-            
-            stream.stop_stream()
-            stream.close()
-            print("Stream closed successfully")
-        except Exception as e:
-            print(f"Error testing stream: {e}")
+            frames.append(data)
+            logger.info(f"Recorded chunk {i+1}/48")
         
-        p.terminate()
-        print("\nDiagnostic complete!")
+        stream.stop_stream()
+        stream.close()
+        
+        # Save the recording
+        logger.info("\nSaving test recording...")
+        wf = wave.open("test_recording.wav", 'wb')
+        wf.setnchannels(1)
+        wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
+        wf.setframerate(16000)
+        wf.writeframes(b''.join(frames))
+        wf.close()
+        
+        logger.info("Test completed successfully!")
         
     except Exception as e:
-        print(f"Error during diagnostic: {e}")
+        logger.error(f"Error during test: {e}")
+    finally:
+        p.terminate()
 
 if __name__ == "__main__":
-    diagnose_audio()
+    test_audio_device()
