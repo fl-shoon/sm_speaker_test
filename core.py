@@ -169,7 +169,7 @@ class SpeakerCore:
                     self.display.start_listening_display(SatoruHappy)
                 )
                 
-                frames = self.py_recorder.record_question(audio_player=self.audio_player)
+                frames = await self.py_recorder.record_question(audio_player=self.audio_player)
 
                 if not frames:
                     silence_count += 1
@@ -241,7 +241,7 @@ class SpeakerCore:
                     self.display.start_listening_display(SatoruHappy)
                 )
                 
-                frames = self.py_recorder.record_question(audio_player=self.audio_player)
+                frames = await self.py_recorder.record_question(audio_player=self.audio_player)
 
                 if not frames:
                     silence_count += 1

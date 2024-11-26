@@ -117,7 +117,7 @@ class PyRecorder:
         energy = np.sum(filtered_audio**2) / len(filtered_audio)
         return energy > self.energy_threshold
 
-    def record_question(self, audio_player):
+    async def record_question(self, audio_player):
         self.start_stream()
         recorder_logger.info("Listening... Speak your question.")
 
@@ -156,7 +156,7 @@ class PyRecorder:
                 recorder_logger.info(f"Maximum duration reached. Total chunks: {total_chunks}")
                 break
 
-        audio_player.play_audio(self.beep_file)
+        await audio_player.play_audio(self.beep_file)
         self.stop_stream()
         return b''.join(frames)
 
