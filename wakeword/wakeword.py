@@ -16,22 +16,35 @@ wakeword_logger = logging.getLogger(__name__)
 class WakeWord:
     def __init__(self, args, audio_player):
         self.audio_player = audio_player
-        self.pv_recorder = None 
+        self.pv_recorder = None
         self.play_trigger = None
         self.porcupine = PicoVoiceTrigger(args)
         self.server = args.server
-        self.setting_menu = None
+        self.fallback_mode = False
+        self._recorder_init_retries = 3
+        self._recorder_init_delay = 2
         # self.setting_menu = SettingMenu(audio_player=self.audio_player, serial_module=self.serial_module)
         self.button_check_task = None
         self.calibration_task = None
         
-    def initialize_recorder(self):
+    async def initialize_recorder(self):
+        """Initialize recorder with retries and fallback mechanism"""
         if self.pv_recorder is None:
-            try:
-                self.pv_recorder = PvRecorder(frame_length=self.porcupine.frame_length)
-            except Exception as e:
-                wakeword_logger.error(f"Failed to initialize recorder: {e}")
-                raise
+            for attempt in range(self._recorder_init_retries):
+                try:
+                    self.pv_recorder = PvRecorder(frame_length=self.porcupine.frame_length)
+                    self.fallback_mode = False
+                    return True
+                except Exception as e:
+                    wakeword_logger.warning(f"Attempt {attempt + 1}/{self._recorder_init_retries} "
+                                          f"to initialize recorder failed: {e}")
+                    if attempt < self._recorder_init_retries - 1:
+                        await asyncio.sleep(self._recorder_init_delay)
+                    else:
+                        wakeword_logger.error("All recorder initialization attempts failed. "
+                                            "Switching to fallback mode.")
+                        self.fallback_mode = True
+                        return False
 
     async def check_buttons(self):
         try:
@@ -58,8 +71,13 @@ class WakeWord:
     async def listen_for_wake_word(self, schedule_manager, py_recorder):
         tasks = set()
         try:
-            self.initialize_recorder()
-            self.pv_recorder.start()
+            # Initialize recorder with proper error handling
+            recorder_initialized = await self.initialize_recorder()
+            if not recorder_initialized and not self.fallback_mode:
+                return False, WakeWordType.OTHER
+
+            if not self.fallback_mode:
+                self.pv_recorder.start()
 
             frame_bytes = []
             calibration_interval = 5
@@ -82,7 +100,18 @@ class WakeWord:
                 # if schedule_manager.check_scheduled_conversation():
                 #     return True, WakeWordType.SCHEDULE
 
-                audio_frame = self.pv_recorder.read()
+                if self.fallback_mode:
+                    # Simplified listening mode using py_recorder
+                    audio_frame = await py_recorder.read_frame()
+                    if audio_frame is None:
+                        continue
+                else:
+                    try:
+                        audio_frame = self.pv_recorder.read()
+                    except Exception as e:
+                        wakeword_logger.error(f"Error reading from PvRecorder: {e}")
+                        return False, WakeWordType.OTHER
+                    
                 audio_frame_bytes = np.array(audio_frame, dtype=np.int16).tobytes()
                 frame_bytes.append(audio_frame_bytes)
 
@@ -92,8 +121,11 @@ class WakeWord:
                         frame_bytes = await self.calibrate_audio(py_recorder, frame_bytes)
                         last_calibration_time = current_time
 
-                detections = self.porcupine.process(audio_frame)
-                wake_word_triggered = detections >= 0
+                if not self.fallback_mode:
+                    detections = self.porcupine.process(audio_frame)
+                    wake_word_triggered = detections >= 0
+                else:
+                    wake_word_triggered = await self.fallback_wake_word_detection(audio_frame)
                 
                 if wake_word_triggered:
                     wakeword_logger.info("Wake word detected")
@@ -137,8 +169,14 @@ class WakeWord:
 
         return False, None
     
-    def cleanup_recorder(self):
-        if self.pv_recorder:
+    async def fallback_wake_word_detection(self, audio_frame):
+        audio_data = np.frombuffer(audio_frame, dtype=np.int16)
+        volume = np.abs(audio_data).mean()
+        threshold = 1000  
+        return volume > threshold
+    
+    async def cleanup_recorder(self):
+        if self.pv_recorder and not self.fallback_mode:
             try:
                 self.pv_recorder.stop()
                 self.pv_recorder.delete()
