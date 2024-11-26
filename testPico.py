@@ -88,7 +88,7 @@ class PicoVoiceTester:
         raise RuntimeError("No suitable input device found")
 
     def initialize(self):
-        """Initialize PicoVoice and audio stream"""
+        """Initialize PicoVoice and audio stream with explicit USB audio configuration"""
         try:
             import pvporcupine
             self.porcupine = pvporcupine.create(
@@ -98,20 +98,33 @@ class PicoVoiceTester:
                 sensitivities=self.sensitivities
             )
 
-            # Find suitable input device
-            input_device_index = self.find_input_device()
-            
             self.audio = pyaudio.PyAudio()
+            
+            # Try to find the USB Audio CODEC device
+            device_index = None
+            for i in range(self.audio.get_device_count()):
+                device_info = self.audio.get_device_info_by_index(i)
+                logger.info(f"Checking device {i}: {device_info['name']}")
+                if 'USB AUDIO  CODEC' in device_info['name']:
+                    device_index = i
+                    break
+            
+            if device_index is None:
+                logger.error("Could not find USB Audio CODEC device")
+                return False
+
+            # Configure audio stream with explicit parameters
             self.audio_stream = self.audio.open(
                 rate=self.porcupine.sample_rate,
                 channels=1,
                 format=pyaudio.paInt16,
                 input=True,
-                input_device_index=input_device_index,
-                frames_per_buffer=self.porcupine.frame_length
+                input_device_index=device_index,
+                frames_per_buffer=self.porcupine.frame_length,
+                stream_callback=None
             )
 
-            logger.info("PicoVoice and audio stream initialized successfully")
+            logger.info(f"PicoVoice and audio stream initialized successfully using device index {device_index}")
             return True
 
         except Exception as e:
