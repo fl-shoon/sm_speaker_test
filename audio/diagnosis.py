@@ -1,62 +1,78 @@
 import pyaudio
 import wave
-import logging
+import time
+import os
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def test_audio_device():
-    """Test audio device recording"""
-    p = pyaudio.PyAudio()
+def test_audio():
+    print("\nTesting audio setup...")
+    
+    # Check device presence
+    if not os.path.exists('/dev/snd/pcmC0D0c'):
+        print("Audio capture device not found!")
+        return
+    
+    # Force release any existing handles
+    os.system('fuser -k /dev/snd/*')
+    time.sleep(1)
+    
+    p = None
+    stream = None
     
     try:
-        # List all devices
-        logger.info("\nAvailable audio devices:")
+        print("Initializing PyAudio...")
+        p = pyaudio.PyAudio()
+        
+        # Find USB CODEC device
+        device_index = None
         for i in range(p.get_device_count()):
             try:
-                dev_info = p.get_device_info_by_index(i)
-                logger.info(f"Device {i}: {dev_info['name']}")
-                logger.info(f"  Input channels: {dev_info['maxInputChannels']}")
-                logger.info(f"  Sample rate: {dev_info['defaultSampleRate']}")
-            except Exception as e:
-                logger.error(f"Error getting device info for index {i}: {e}")
+                info = p.get_device_info_by_index(i)
+                print(f"Found device {i}: {info['name']}")
+                if info['maxInputChannels'] > 0:
+                    if 'CODEC' in info['name'] or 'USB' in info['name']:
+                        device_index = i
+                        print(f"Selected device {i}: {info['name']}")
+                        break
+            except:
+                continue
         
-        # Try to record some audio
-        logger.info("\nTesting recording...")
+        if device_index is None:
+            print("Using default device 0")
+            device_index = 0
         
+        print("Opening audio stream...")
         stream = p.open(
             format=pyaudio.paInt16,
             channels=1,
             rate=16000,
             input=True,
             frames_per_buffer=512,
-            input_device_index=0  # Try device 0
+            input_device_index=device_index
         )
         
+        print("Recording 3 seconds of audio...")
         frames = []
-        for i in range(0, 48):  # Record for ~1.5 seconds
+        for _ in range(94):  # ~3 seconds
             data = stream.read(512, exception_on_overflow=False)
             frames.append(data)
-            logger.info(f"Recorded chunk {i+1}/48")
         
-        stream.stop_stream()
-        stream.close()
+        print("Saving recording...")
+        with wave.open("test.wav", 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
+            wf.setframerate(16000)
+            wf.writeframes(b''.join(frames))
         
-        # Save the recording
-        logger.info("\nSaving test recording...")
-        wf = wave.open("test_recording.wav", 'wb')
-        wf.setnchannels(1)
-        wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
-        wf.setframerate(16000)
-        wf.writeframes(b''.join(frames))
-        wf.close()
-        
-        logger.info("Test completed successfully!")
+        print("Test completed successfully!")
         
     except Exception as e:
-        logger.error(f"Error during test: {e}")
+        print(f"Error during test: {e}")
     finally:
-        p.terminate()
+        if stream:
+            stream.stop_stream()
+            stream.close()
+        if p:
+            p.terminate()
 
 if __name__ == "__main__":
-    test_audio_device()
+    test_audio()
