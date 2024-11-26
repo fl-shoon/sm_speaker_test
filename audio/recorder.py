@@ -181,8 +181,17 @@ class PyRecorder:
         return temp_path
 
     def __del__(self):
-        self.stop_stream()
-        if self.pyaudio:
-            self.pyaudio.terminate()
-        if hasattr(self, 'beep_file') and os.path.exists(self.beep_file):
-            os.remove(self.beep_file)
+        try:
+            self.stop_stream()
+            if hasattr(self, 'beep_file') and os.path.exists(self.beep_file):
+                os.remove(self.beep_file)
+            if self.pyaudio and (self.pyaudio._ptr is not None):  
+                try:
+                    active_streams = sum(1 for i in range(self.pyaudio.get_host_api_count()) 
+                                    for j in range(self.pyaudio.get_device_count()))
+                    if active_streams <= 1:  
+                        self.pyaudio.terminate()
+                except:
+                    pass  
+        except:
+            pass

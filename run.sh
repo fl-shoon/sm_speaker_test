@@ -36,7 +36,7 @@ cleanup() {
 trap cleanup INT TERM
 
 # Activate virtual environment and verify required modules
-source .venv/bin/activate
+source .venv/bin/activate --system-site-packages
 
 # Check required modules
 echo "Verifying required Python modules..."
