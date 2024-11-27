@@ -44,6 +44,7 @@ if missing_modules:
     sys.exit(1)
 print('\nAll required modules are available.')
 "
+source /etc/profile.d/seaman_env.sh
 
 if [ $? -eq 0 ]; then
     python3 main.py &

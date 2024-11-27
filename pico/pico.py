@@ -6,7 +6,6 @@ import pvporcupine
 import pyaudio
 import time
 import threading
-import os
 
 logging.basicConfig(level=logging.INFO)
 pico_logger = logging.getLogger(__name__)

@@ -54,8 +54,8 @@ class SpeakerCore:
         core_logger.info("Speaker Core initialized successfully")
 
     async def run(self, schedule_manager):
+        cleanup_attempted = False
         try:
-            # Setup signal handlers
             await setup_signal_handlers(self.cleanup)
             
             while not is_exit_event_set():
@@ -71,8 +71,18 @@ class SpeakerCore:
                         )
                     )
                     self.tasks.add(wake_word_task)
-                    res, trigger_type = await wake_word_task
-                    self.tasks.remove(wake_word_task)
+                    
+                    try:
+                        res, trigger_type = await wake_word_task
+                    except Exception as e:
+                        core_logger.error(f"Wake word task failed: {e}")
+                        # Force cleanup on critical errors
+                        if not cleanup_attempted:
+                            cleanup_attempted = True
+                            await self.cleanup()
+                        raise
+                    finally:
+                        self.tasks.remove(wake_word_task)
                     
                     # Reset retry count on successful operation
                     self.device_retry_count = 0
@@ -92,27 +102,29 @@ class SpeakerCore:
                     self.device_retry_count += 1
                     core_logger.error(f"Error occurred in wake word listening: {e}")
                     
+                    if not cleanup_attempted:
+                        cleanup_attempted = True
+                        await self.cleanup()
+                        
                     if self.device_retry_count > 3:
                         core_logger.info("Too many device errors, reinitializing...")
-                        await self.cleanup()
-                        await asyncio.sleep(2)
-                        await self.reinitialize()
-                        self.device_retry_count = 0
-                    else:
-                        await asyncio.sleep(1)
+                        break 
+
+                    await asyncio.sleep(1)
                         
-        except asyncio.CancelledError:
-            core_logger.info("Main loop cancelled, initiating cleanup...")
-            await self.cleanup()
+        except KeyboardInterrupt:
+            core_logger.info("KeyboardInterrupt received, initiating shutdown...")
         except Exception as e:
-            core_logger.error(f"Error occurred in core: {e}")
-            await self.cleanup()
+            core_logger.error(f"Critical error in core run loop: {e}")
+        finally:
+            if not cleanup_attempted:
+                await self.cleanup()
 
     async def cleanup(self):
-        """Clean up all resources"""
+        """Enhanced cleanup process"""
         core_logger.info("Starting cleanup process...")
         try:
-            # Cancel all running tasks
+            # Cancel all running tasks first
             for task in self.tasks:
                 if not task.done():
                     task.cancel()
@@ -121,40 +133,39 @@ class SpeakerCore:
                     except asyncio.CancelledError:
                         pass
             
-            # Clean up components in specific order
+            cleanup_tasks = []
+            
+            # Clean up display first to ensure visual feedback
+            if self.display:
+                cleanup_tasks.append(self.display.send_white_frames())
+                cleanup_tasks.append(self.display.cleanup_display())
+            
+            # Clean up wake word and recorder
             if self.wake_word:
-                await self.wake_word.cleanup_recorder()
+                cleanup_tasks.append(self.wake_word.cleanup_recorder())
             
             if self.audio_player:
                 await self.audio_player.cleanup()
                 
-            if self.py_recorder:
-                self.py_recorder.stop_stream()
-            
-            if self.display:
-                await self.display.cleanup_display()
-            
+            if cleanup_tasks:
+                # Wait for cleanup tasks with timeout
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*cleanup_tasks, return_exceptions=True),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    core_logger.error("Cleanup tasks timed out")
+                    
         except Exception as e:
             core_logger.error(f"Error during cleanup: {e}")
         finally:
-            core_logger.info("Cleanup process completed.")
-
-    async def reinitialize(self):
-        """Reinitialize components after failure"""
-        try:
-            await self.cleanup()
-            
-            self.py_recorder = PyRecorder()
-            self.wake_word = WakeWord(
-                args=self.args,
-                audio_player=self.audio_player
-            )
-            
-            core_logger.info("Successfully reinitialized devices")
-            
-        except Exception as e:
-            core_logger.error(f"Failed to reinitialize: {e}")
-            raise
+            if self.display:
+                try:
+                    await self.display.send_white_frames()
+                except Exception as e:
+                    core_logger.error(f"Final display cleanup attempt failed: {e}")
+            core_logger.info("Cleanup process completed")
 
     async def process_conversation(self):
         conversation_active = True
