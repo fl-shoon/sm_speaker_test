@@ -8,42 +8,34 @@ import subprocess
 class ServerManager:
     def __init__(self, address=None):
         if address is None:
-            self.address = "http://localhost:8080"
+            self.address = "http://192.168.2.1:8080"  
         else:
             self.address = address
         
         try:
-            self.font = ImageFont.truetype("/Users/nobo/Library/Fonts/NotoSansCJKjp-Regular.otf", 24)
+            self.font = ImageFont.truetype("/usr/share/fonts/noto/NotoSansCJK-Regular.ttc", 24)
         except:
             print("Warning: Default font not found. Some text rendering features may not work.")
             self.font = None
 
         self.server = None
         self.btn_data = [False, False, False, False, False]
-        self.max_retries = 3
-        self.retry_delay = 2
         self._session = None
         
     async def initialize(self):
-        for attempt in range(self.max_retries):
-            try:
-                if self._session is None:
-                    self._session = aiohttp.ClientSession()
-                
-                self.server = Server(self.address, session=self._session)
-                await self.server.Buttons()
-                print(f"Successfully connected to server at {self.address}")
-                return self.server
-            except Exception as e:
-                if attempt < self.max_retries - 1:
-                    print(f"Connection attempt {attempt + 1} failed: {e}")
-                    print(f"Retrying in {self.retry_delay} seconds...")
-                    await asyncio.sleep(self.retry_delay)
-                else:
-                    print(f"Failed to initialize server after {self.max_retries} attempts: {e}")
-                    print(f"Please verify the server is running at: {self.address}")
-                    await self._cleanup_session()
-                    raise
+        try:
+            if self._session is None:
+                self._session = aiohttp.ClientSession()
+            
+            self.server = Server(self.address, session=self._session)
+            await self.server.Buttons()
+            print(f"Successfully connected to server at {self.address}")
+            return self.server
+        except Exception as e:
+            print(f"Failed to initialize server: {e}")
+            print(f"Please verify the server is running at: {self.address}")
+            await self._cleanup_session()
+            raise
         
     async def _cleanup_session(self):
         """Clean up the aiohttp session"""
@@ -59,29 +51,15 @@ class ServerManager:
         except Exception as e:
             print(f"Error during server cleanup: {e}")
 
-    async def reconnect(self):
-        """Attempt to reconnect to the server"""
-        try:
-            await self.cleanup()
-            await self.initialize()
-        except Exception as e:
-            print(f"Reconnection failed: {e}")
-            raise
-
     async def show_image(self, encoded_img):
         """Display an image on the LCD screen with retry on failure"""
-        for attempt in range(self.max_retries):
-            try:
-                if self.server:
-                    await self.server.LcdShow(image=encoded_img)
-                    return
-            except Exception as e:
-                if attempt < self.max_retries - 1:
-                    print(f"Show image failed, attempting to reconnect...")
-                    await self.reconnect()
-                else:
-                    print(f"Error showing image after {self.max_retries} attempts: {e}")
-                    raise
+        try:
+            if self.server:
+                await self.server.LcdShow(image=encoded_img)
+                return
+        except Exception as e:
+            print(f"Show image failed...")
+            raise
 
     async def get_buttons(self):
         """Get button states and detect new presses"""
