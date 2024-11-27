@@ -22,8 +22,12 @@ class ServerManager:
         self.server = None
         self.btn_data = [False, False, False, False, False]
         self._session = None
+        self._is_shutdown = False
         
     async def initialize(self):
+        if self._is_shutdown:
+            return False
+        
         try:
             if self._session is None:
                 self._session = aiohttp.ClientSession()
@@ -39,20 +43,35 @@ class ServerManager:
             raise
         
     async def _cleanup_session(self):
-        """Clean up the aiohttp session"""
+        """Clean up the aiohttp session with timeout"""
         if self._session and not self._session.closed:
-            await self._session.close()
-            await asyncio.sleep(0.1)
-        self._session = None
+            try:
+                await asyncio.wait_for(self._session.close(), timeout=2.0)
+                # Small delay to ensure connections are closed
+                await asyncio.sleep(0.1)
+            except asyncio.TimeoutError:
+                print("Session cleanup timed out")
+            except Exception as e:
+                print(f"Error closing session: {e}")
+            finally:
+                self._session = None
+                await asyncio.sleep(0.1)
 
     async def cleanup(self):
-        """Clean up server resources"""
+        """Enhanced cleanup with shutdown flag"""
+        self._is_shutdown = True
         try:
+            # Cancel any pending operations first
+            if self.server:
+                self.server = None
             await self._cleanup_session()
         except Exception as e:
             print(f"Error during server cleanup: {e}")
 
     async def show_image(self, encoded_img):
+        if self._is_shutdown:
+            return
+        
         """Display an image on the LCD screen with retry on failure"""
         try:
             if self.server:
