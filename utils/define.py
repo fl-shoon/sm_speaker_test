@@ -18,6 +18,7 @@ AUDIO_DIR = os.path.join(ASSETS_DIR, 'audio')
 IMAGE_DIR = os.path.join(ASSETS_DIR, 'images')
 GIF_DIR = os.path.join(ASSETS_DIR, 'gifs')
 VOICE_TRIGGER_DIR = os.path.join(ASSETS_DIR, 'trigger')
+FONT_DIR = os.path.join(ASSETS_DIR, 'font')
 
 # Define the temporary ai output audio file
 TEMP_AUDIO_FILE = os.path.join(AUDIO_DIR, 'output.wav')
@@ -52,6 +53,9 @@ PicoWakeWordKonnichiwa = os.path.join(VOICE_TRIGGER_DIR,"pico_voice_wake_word_ko
 PicoWakeWordSatoru = os.path.join(VOICE_TRIGGER_DIR,"pico_voice_wake_word_satoru.ppn") 
 ToshibaVoiceDictionary = os.path.join(VOICE_TRIGGER_DIR,"toshiba_voice_dict_jaJP.vtdic")
 ToshibaVoiceLibrary = os.path.join(VOICE_TRIGGER_DIR,"libVT_ARML64h.so")
+
+# font
+NotoSansFont = os.path.join(FONT_DIR,"NotoSansCJK-Regular.ttc")
 
 class WakeWordType(str, Enum):
     TRIGGER = auto()

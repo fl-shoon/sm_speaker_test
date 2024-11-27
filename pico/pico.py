@@ -20,8 +20,146 @@ class PicoVoiceTrigger:
         self.frame_length = None
         self._lock = threading.Lock()
         self.args = args
-        self.device_index = 0  # Fixed device index for USB CODEC
-        self.initialize(args)
+        self.device_index = 0 
+
+        max_retries = 3
+        retry_count = 0
+        last_error = None
+
+        while retry_count < max_retries:
+            try:
+                # Force release audio device before initialization
+                self._force_release_audio()
+                time.sleep(0.5)  # Wait for device to be released
+                
+                if self.initialize(args):
+                    break
+            except Exception as e:
+                last_error = e
+                retry_count += 1
+                pico_logger.error(f"Initialization attempt {retry_count} failed: {e}")
+                time.sleep(1)  # Wait before retrying
+
+        if retry_count >= max_retries:
+            pico_logger.error(f"Failed to initialize after {max_retries} attempts. Last error: {last_error}")
+            raise RuntimeError(f"Failed to initialize PicoVoice after {max_retries} attempts")
+
+    def _force_release_audio(self):
+        """Force release of ALSA audio device"""
+        try:
+            # Kill any process using audio device
+            os.system('fuser -k /dev/snd/*')
+            time.sleep(0.2)
+            
+            # Reset ALSA
+            os.system('alsactl kill rescan')
+            os.system('alsactl restore')
+            time.sleep(0.2)
+            
+            # Additional ALSA cleanup
+            os.system('pulseaudio -k 2>/dev/null || true')  # Kill pulseaudio if running
+            os.system('rm -rf /var/run/alsa/runtime-*')  # Clear ALSA runtime files
+            time.sleep(0.2)
+            
+        except Exception as e:
+            pico_logger.error(f"Error during audio device release: {e}")
+
+    def _validate_audio_device(self):
+        """Validate that audio device is available and working"""
+        try:
+            p = pyaudio.PyAudio()
+            device_info = p.get_device_info_by_index(self.device_index)
+            
+            if device_info['maxInputChannels'] > 0:
+                pico_logger.info(f"Found valid input device: {device_info['name']}")
+                
+                # Test device with minimal configuration
+                test_stream = p.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=16000,
+                    input=True,
+                    input_device_index=self.device_index,
+                    frames_per_buffer=512,
+                    start=False
+                )
+                
+                test_stream.start_stream()
+                test_data = test_stream.read(512, exception_on_overflow=False)
+                test_stream.stop_stream()
+                test_stream.close()
+                
+                if len(test_data) > 0:
+                    pico_logger.info("Audio device test successful")
+                    return True
+                    
+            return False
+            
+        except Exception as e:
+            pico_logger.error(f"Audio device validation failed: {e}")
+            return False
+        finally:
+            if p:
+                p.terminate()
+
+    def _initialize_audio(self):
+        """Initialize audio with enhanced error handling"""
+        if not self._validate_audio_device():
+            pico_logger.error("Audio device validation failed")
+            self._force_release_audio()
+            time.sleep(1)
+            if not self._validate_audio_device():
+                raise RuntimeError("Audio device unavailable after reset")
+
+        try:
+            if self.audio is None:
+                self.audio = pyaudio.PyAudio()
+            
+            # Get device info
+            device_info = self.audio.get_device_info_by_index(self.device_index)
+            pico_logger.info(f"Using audio device: {device_info['name']}")
+            
+            # Close any existing stream
+            if self.audio_stream is not None:
+                try:
+                    if self.audio_stream.is_active():
+                        self.audio_stream.stop_stream()
+                    self.audio_stream.close()
+                except:
+                    pass
+                self.audio_stream = None
+            
+            # Open new stream with error handling
+            try:
+                self.audio_stream = self.audio.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=16000,
+                    frames_per_buffer=self.frame_length,
+                    input=True,
+                    input_device_index=self.device_index,
+                    start=False
+                )
+                
+                # Test the stream before returning
+                self.audio_stream.start_stream()
+                test_data = self.audio_stream.read(self.frame_length, exception_on_overflow=False)
+                if not test_data:
+                    raise RuntimeError("Failed to read test data")
+                    
+                pico_logger.info("Audio stream initialized successfully")
+                return True
+                
+            except Exception as e:
+                pico_logger.error(f"Stream initialization failed: {e}")
+                if self.audio_stream:
+                    self.audio_stream.close()
+                    self.audio_stream = None
+                raise
+                
+        except Exception as e:
+            pico_logger.error(f"Error in audio initialization: {e}")
+            raise
 
     def initialize(self, args):
         """Initialize Porcupine and audio stream"""
@@ -51,70 +189,6 @@ class PicoVoiceTrigger:
         except Exception as e:
             pico_logger.error(f"Failed to initialize: {e}")
             self.cleanup()
-            return False
-
-    def _initialize_audio(self):
-        """Initialize audio subsystem"""
-        try:
-            # Create new PyAudio instance
-            if self.audio is None:
-                self.audio = pyaudio.PyAudio()
-            
-            # Get device info
-            device_info = self.audio.get_device_info_by_index(self.device_index)
-            pico_logger.info(f"Using audio device: {device_info['name']}")
-            
-            # Close any existing stream
-            if self.audio_stream is not None:
-                try:
-                    if self.audio_stream.is_active():
-                        self.audio_stream.stop_stream()
-                    self.audio_stream.close()
-                except:
-                    pass
-                self.audio_stream = None
-            
-            # Open new stream with optimized settings
-            self.audio_stream = self.audio.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=16000,
-                frames_per_buffer=self.frame_length,
-                input=True,
-                input_device_index=self.device_index,
-                start=False
-            )
-            
-            # Test read before starting stream
-            try:
-                self.audio_stream.start_stream()
-                test_data = self.audio_stream.read(self.frame_length, exception_on_overflow=False)
-                if not test_data:
-                    raise RuntimeError("Failed to read test data")
-            except Exception as e:
-                pico_logger.error(f"Stream test failed: {e}")
-                if self.audio_stream:
-                    self.audio_stream.close()
-                    self.audio_stream = None
-                raise
-            
-            pico_logger.info("Audio stream initialized successfully")
-            return True
-            
-        except Exception as e:
-            pico_logger.error(f"Error in audio initialization: {e}")
-            if self.audio_stream:
-                try:
-                    self.audio_stream.close()
-                except:
-                    pass
-                self.audio_stream = None
-            if self.audio:
-                try:
-                    self.audio.terminate()
-                except:
-                    pass
-                self.audio = None
             return False
 
     def process(self, audio_frame):

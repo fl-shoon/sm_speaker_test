@@ -1,5 +1,6 @@
 from jsonrpc_async import Server
 from PIL import Image, ImageFont, ImageDraw
+from utils.define import *
 
 import aiohttp
 import asyncio
@@ -13,7 +14,7 @@ class ServerManager:
             self.address = address
         
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/noto/NotoSansCJK-Regular.ttc", 24)
+            self.font = ImageFont.truetype(font=NotoSansFont, size=24)
         except:
             print("Warning: Default font not found. Some text rendering features may not work.")
             self.font = None

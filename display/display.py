@@ -130,9 +130,8 @@ class DisplayModule:
             white_img = Image.new('RGB', (240, 240), color='white')
             encoded_data = self.display_manager.encode_image_to_bytes(white_img)
             
-            for _ in range(3):
-                await self.display_manager.send_image(encoded_data)
-                await asyncio.sleep(0.05)
+            await self.display_manager.send_image(encoded_data)
+            await asyncio.sleep(0.05)
         except Exception as e:
             display_logger.error(f"Error sending white frames: {e}")
 
