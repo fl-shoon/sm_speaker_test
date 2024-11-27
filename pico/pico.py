@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from utils.define import *
 
 import logging
@@ -10,6 +11,21 @@ import threading
 
 logging.basicConfig(level=logging.INFO)
 pico_logger = logging.getLogger(__name__)
+
+@contextmanager
+def time_limit(seconds):
+    def signal_handler(signum, frame):
+        raise TimeoutError(f"Timed out after {seconds} seconds")
+    
+    # Set the signal handler and a alarm
+    signal.signal(signal.SIGALRM, signal_handler)
+    signal.alarm(seconds)
+    
+    try:
+        yield
+    finally:
+        # Disable the alarm
+        signal.alarm(0)
 
 class PicoVoiceTrigger:
     def __init__(self, args):
@@ -45,12 +61,13 @@ class PicoVoiceTrigger:
             raise RuntimeError(f"Failed to initialize PicoVoice after {max_retries} attempts")
 
     def _force_release_audio(self):
-        """More aggressive force release of ALSA audio device"""
+        """Release audio device with system-independent approach"""
         try:
-            # Stop any active streams first
+            # Clean up any existing streams
             if self.audio_stream:
                 try:
-                    self.audio_stream.stop_stream()
+                    if hasattr(self.audio_stream, 'is_active') and self.audio_stream.is_active():
+                        self.audio_stream.stop_stream()
                     self.audio_stream.close()
                 except:
                     pass
@@ -62,88 +79,130 @@ class PicoVoiceTrigger:
                 except:
                     pass
                 self.audio = None
-                
-            time.sleep(0.2)
 
-            # More aggressive cleanup
-            os.system('fuser -k /dev/snd/*')
-            time.sleep(0.2)
-            
-            os.system('rm -f /var/lib/alsa/asound.state.lock')
-            os.system('rm -rf /var/run/alsa/runtime-*')
-            time.sleep(0.2)
-
-            # Kill audio processes
-            os.system('killall -9 pulseaudio 2>/dev/null || true')
-            os.system('killall -9 aplay arecord 2>/dev/null || true')
-            time.sleep(0.5)
-
-            # Complete ALSA reset
-            os.system('alsactl kill rescan')
-            os.system('alsactl restore')
-            os.system('alsa force-reload')
+            # Wait for device to be released
             time.sleep(1.0)
             
+            # Try to kill any process using audio device
+            try:
+                os.system('fuser -k /dev/snd/* 2>/dev/null || true')
+            except:
+                pass
+            time.sleep(0.5)
+
         except Exception as e:
             pico_logger.error(f"Error during audio device release: {e}")
 
     def _initialize_audio(self):
-        """Initialize audio with extra precautions"""
+        """Initialize audio with device locking"""
         try:
-            # Always force release first
+            # Force release first
             self._force_release_audio()
             
-            # Wait for device to be ready
-            time.sleep(1.0)
-            
-            if not self._validate_audio_device():
-                pico_logger.error("Audio device validation failed")
-                return False
+            # Create lock file to prevent other processes from accessing the device
+            lock_file = "/tmp/audio_device.lock"
+            try:
+                with open(lock_file, 'x') as f:  # exclusive creation
+                    f.write(str(os.getpid()))
+            except FileExistsError:
+                # If lock exists, check if process is still running
+                try:
+                    with open(lock_file, 'r') as f:
+                        pid = int(f.read().strip())
+                    os.kill(pid, 0)  # Check if process exists
+                    pico_logger.error("Audio device in use by another process")
+                    return False
+                except (OSError, ValueError):
+                    # Process not running or invalid PID, remove lock
+                    try:
+                        os.remove(lock_file)
+                        with open(lock_file, 'x') as f:
+                            f.write(str(os.getpid()))
+                    except:
+                        pass
 
-            # Create new PyAudio instance
-            self.audio = pyaudio.PyAudio()
-            device_info = self.audio.get_device_info_by_index(self.device_index)
-            
-            # Test with minimal configuration first
-            test_stream = self.audio.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=16000,
-                input=True,
-                frames_per_buffer=256,
-                input_device_index=self.device_index,
-                start=False
-            )
-            
-            test_stream.start_stream()
-            test_frame = test_stream.read(256, exception_on_overflow=False)
-            test_stream.stop_stream()
-            test_stream.close()
-            
-            if not test_frame:
-                raise RuntimeError("Test stream returned no data")
-            
-            time.sleep(0.5)  # Wait before opening actual stream
-            
-            # Open actual stream
-            self.audio_stream = self.audio.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=16000,
-                frames_per_buffer=self.frame_length,
-                input=True,
-                input_device_index=self.device_index,
-                start=False
-            )
-            
-            self.audio_stream.start_stream()
-            pico_logger.info("Audio stream initialized successfully")
-            return True
-            
+            try:
+                # Initialize PyAudio
+                self.audio = pyaudio.PyAudio()
+                
+                # Test with minimal configuration first
+                test_stream = self.audio.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=16000,
+                    frames_per_buffer=256,
+                    input=True,
+                    input_device_index=self.device_index,
+                    start=False
+                )
+                
+                # Test the stream
+                test_stream.start_stream()
+                test_data = test_stream.read(256, exception_on_overflow=False)
+                test_stream.stop_stream()
+                test_stream.close()
+                
+                if not test_data:
+                    raise RuntimeError("Test stream returned no data")
+
+                # Wait before opening main stream
+                time.sleep(0.5)
+                
+                # Open main stream
+                self.audio_stream = self.audio.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=16000,
+                    frames_per_buffer=self.frame_length,
+                    input=True,
+                    input_device_index=self.device_index,
+                    start=False
+                )
+                
+                self.audio_stream.start_stream()
+                pico_logger.info("Audio stream initialized successfully")
+                return True
+
+            except Exception as e:
+                pico_logger.error(f"Error initializing audio: {e}")
+                self._force_release_audio()
+                return False
+                
         except Exception as e:
             pico_logger.error(f"Error in audio initialization: {e}")
-            self._force_release_audio()
             return False
+        finally:
+            # Clean up lock file
+            try:
+                os.remove(lock_file)
+            except:
+                pass
+
+    def cleanup(self):
+        """Enhanced cleanup"""
+        pico_logger.info("Starting cleanup process...")
+        
+        try:
+            # Clean up audio resources
+            self._force_release_audio()
+            
+            # Clean up Porcupine
+            if self.porcupine:
+                try:
+                    # Set timeout for delete operation
+                    with time_limit(2):  # 2 second timeout
+                        self.porcupine.delete()
+                except Exception as e:
+                    pico_logger.error(f"Error deleting Porcupine instance: {e}")
+                finally:
+                    self.porcupine = None
+
+        except Exception as e:
+            pico_logger.error(f"Error during cleanup: {e}")
+        finally:
+            # Ensure device is released
+            self._force_release_audio()
+            pico_logger.info("Cleanup completed")
 
     def _validate_audio_device(self):
         """Enhanced audio device validation"""
@@ -264,52 +323,6 @@ class PicoVoiceTrigger:
         except Exception as e:
             pico_logger.error(f"Error in audio preprocessing: {e}")
             return audio_data  # Return original data if preprocessing fails
-
-    def cleanup(self):
-        """Cleanup resources"""
-        pico_logger.info("Starting cleanup process...")
-        
-        try:
-            # Clean up in reverse order of initialization
-            if self.audio_stream is not None:
-                try:
-                    if self.audio_stream.is_active():
-                        self.audio_stream.stop_stream()
-                    self.audio_stream.close()
-                except Exception as e:
-                    pico_logger.error(f"Error closing audio stream: {e}")
-                finally:
-                    self.audio_stream = None
-
-            if self.audio is not None:
-                try:
-                    self.audio.terminate()
-                except Exception as e:
-                    pico_logger.error(f"Error terminating PyAudio: {e}")
-                finally:
-                    self.audio = None
-
-            # Handle Porcupine cleanup separately
-            if self.porcupine is not None:
-                try:
-                    # Add a timeout for delete operation
-                    signal.alarm(2)  # Set 2 second alarm
-                    self.porcupine.delete()
-                    signal.alarm(0)  # Disable alarm
-                except Exception as e:
-                    pico_logger.error(f"Error deleting Porcupine instance: {e}")
-                finally:
-                    self.porcupine = None
-                    signal.alarm(0)  # Ensure alarm is disabled
-
-        except Exception as e:
-            pico_logger.error(f"Error during PicoVoice cleanup: {e}")
-        finally:
-            # Ensure everything is set to None
-            self.audio_stream = None
-            self.audio = None
-            self.porcupine = None
-            pico_logger.info("Cleanup completed")
 
     def _create_porcupine(self, access_key, model_path, keyword_paths, sensitivities):
         """Create and return Porcupine instance with error handling"""
