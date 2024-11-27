@@ -15,6 +15,7 @@ wakeword_logger = logging.getLogger(__name__)
 
 class WakeWord:
     def __init__(self, args, audio_player):
+        self._device_initialized = False
         self.audio_player = audio_player
         self.pyaudio_instance = None
         self.audio_stream = None
@@ -65,22 +66,82 @@ class WakeWord:
                     pass
                 self.pyaudio_instance = None
         
-    def initialize_recorder(self):
+    async def _cleanup_audio(self):
+        """Separate audio cleanup method"""
+        if self.audio_stream:
+            try:
+                if hasattr(self.audio_stream, 'is_active') and self.audio_stream.is_active():
+                    self.audio_stream.stop_stream()
+                self.audio_stream.close()
+            except:
+                pass
+            self.audio_stream = None
+
+        if self.pyaudio_instance:
+            try:
+                self.pyaudio_instance.terminate()
+            except:
+                pass
+            self.pyaudio_instance = None
+
+        self._device_initialized = False
+        await asyncio.sleep(0.5)
+        
+    async def initialize_recorder(self):
+        """Enhanced recorder initialization"""
+        if self._device_initialized:
+            return True
+
         if self.audio_stream is None:
             try:
-                if self.pyaudio_instance is None:
-                    self.pyaudio_instance = pyaudio.PyAudio()
+                # Always clean up existing instances first
+                if self.pyaudio_instance:
+                    try:
+                        self.pyaudio_instance.terminate()
+                    except:
+                        pass
+                    self.pyaudio_instance = None
+
+                time.sleep(0.5)  # Wait for cleanup
+
+                self.pyaudio_instance = pyaudio.PyAudio()
+                
+                # Test the device first
+                test_stream = self.pyaudio_instance.open(
+                    format=self.FORMAT,
+                    channels=self.CHANNELS,
+                    rate=self.RATE,
+                    input=True,
+                    frames_per_buffer=256,  # Smaller buffer for test
+                    start=False
+                )
+                
+                test_stream.start_stream()
+                test_data = test_stream.read(256, exception_on_overflow=False)
+                test_stream.stop_stream()
+                test_stream.close()
+                
+                if not test_data:
+                    raise RuntimeError("Test stream returned no data")
+
+                time.sleep(0.5)  # Wait before opening main stream
                 
                 self.audio_stream = self.pyaudio_instance.open(
                     format=self.FORMAT,
                     channels=self.CHANNELS,
                     rate=self.RATE,
                     input=True,
-                    frames_per_buffer=self.CHUNK
+                    frames_per_buffer=self.CHUNK,
+                    start=False
                 )
+                
+                self.audio_stream.start_stream()
+                self._device_initialized = True
                 wakeword_logger.info("PyAudio recorder initialized successfully")
+                return True
             except Exception as e:
                 wakeword_logger.error(f"Failed to initialize PyAudio recorder: {e}")
+                await self._cleanup_audio()
                 raise
     
     async def check_buttons(self):

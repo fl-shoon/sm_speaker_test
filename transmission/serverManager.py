@@ -8,6 +8,7 @@ import subprocess
 
 class ServerManager:
     def __init__(self, address=None):
+        self._cleanup_complete = False
         if address is None:
             self.address = "http://192.168.2.1:8080"  
         else:
@@ -58,27 +59,34 @@ class ServerManager:
                 await asyncio.sleep(0.1)
 
     async def cleanup(self):
-        """Enhanced cleanup with shutdown flag"""
+        """Enhanced cleanup that prevents further operations"""
+        if self._cleanup_complete:
+            return
+
         self._is_shutdown = True
         try:
-            # Cancel any pending operations first
             if self.server:
                 self.server = None
-            await self._cleanup_session()
+
+            if self._session and not self._session.closed:
+                await self._session.close()
+                await asyncio.sleep(0.1)
         except Exception as e:
             print(f"Error during server cleanup: {e}")
+        finally:
+            self._session = None
+            self._cleanup_complete = True
 
     async def show_image(self, encoded_img):
-        if self._is_shutdown:
+        """Modified to prevent show after cleanup"""
+        if self._cleanup_complete or self._is_shutdown:
             return
-        
-        """Display an image on the LCD screen with retry on failure"""
         try:
             if self.server:
                 await self.server.LcdShow(image=encoded_img)
-                return
         except Exception as e:
-            print(f"Show image failed...")
+            if not self._cleanup_complete:
+                print(f"Show image failed...")
             raise
 
     async def get_buttons(self):

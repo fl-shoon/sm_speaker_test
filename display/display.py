@@ -155,27 +155,30 @@ class DisplayModule:
                 self._is_cleaning = False
 
     async def cleanup_display(self):
+        """Enhanced display cleanup with proper shutdown sequence"""
         async with self._cleanup_lock:
             if not self._is_cleaning:
                 self._is_cleaning = True
-                self._shutdown_event.set()  # Set shutdown event first
+                self._shutdown_event.set()
                 try:
-                    # Try one last white frame
-                    white_img = Image.new('RGB', (240, 240), color='white')
-                    encoded_data = self.display_manager.encode_image_to_bytes(white_img)
-                    try:
-                        await asyncio.wait_for(
-                            self.display_manager.send_image(encoded_data),
-                            timeout=1.0
-                        )
-                    except:
-                        pass
-                    
+                    # Final white frame attempt
                     if self.display_manager:
-                        await self.display_manager.cleanup_server()
-                        self.display_manager = None  # Clear reference
-                except Exception as e:
-                    display_logger.error(f"Display cleanup failed: {e}")
+                        try:
+                            white_img = Image.new('RGB', (240, 240), color='white')
+                            encoded_data = self.display_manager.encode_image_to_bytes(white_img)
+                            await asyncio.wait_for(
+                                self.display_manager.send_image(encoded_data),
+                                timeout=1.0
+                            )
+                        except:
+                            pass
+
+                        # Cleanup server and clear reference
+                        try:
+                            await self.display_manager.cleanup_server()
+                        finally:
+                            # Important: Set to None to prevent further use
+                            self.display_manager = None
                 finally:
                     self._is_cleaning = False
 
