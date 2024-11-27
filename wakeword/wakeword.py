@@ -1,4 +1,5 @@
 from display.setting import SettingMenu
+from openai import OpenAI
 from pico.pico import PicoVoiceTrigger
 from utils.define import *
 from utils.scheduler import run_pending
@@ -23,7 +24,7 @@ class WakeWord:
         self._cleanup_lock = asyncio.Lock()
         
         # Initialize OpenAI client
-        self.client = args.aiclient
+        self.client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
         
         # Audio settings
         self.CHANNELS = 1
@@ -507,7 +508,7 @@ class WakeWord:
                     self.pyaudio_instance = None
                 except Exception as e:
                     wakeword_logger.error(f"Error terminating PyAudio: {e}")
-                    
+
     def __del__(self):
         """Enhanced destructor with proper cleanup"""
         if self.audio_stream or self.pyaudio_instance:
