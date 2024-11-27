@@ -126,6 +126,9 @@ class DisplayModule:
 
     async def send_white_frames(self):
         """Send white frames to clear display"""
+        if self._shutdown_event.is_set():
+            return
+            
         try:
             white_img = Image.new('RGB', (240, 240), color='white')
             encoded_data = self.display_manager.encode_image_to_bytes(white_img)
@@ -155,11 +158,22 @@ class DisplayModule:
         async with self._cleanup_lock:
             if not self._is_cleaning:
                 self._is_cleaning = True
+                self._shutdown_event.set()  # Set shutdown event first
                 try:
-                    await self.send_white_frames()
-                    await asyncio.sleep(0.1)
+                    # Try one last white frame
+                    white_img = Image.new('RGB', (240, 240), color='white')
+                    encoded_data = self.display_manager.encode_image_to_bytes(white_img)
+                    try:
+                        await asyncio.wait_for(
+                            self.display_manager.send_image(encoded_data),
+                            timeout=1.0
+                        )
+                    except:
+                        pass
+                    
                     if self.display_manager:
                         await self.display_manager.cleanup_server()
+                        self.display_manager = None  # Clear reference
                 except Exception as e:
                     display_logger.error(f"Display cleanup failed: {e}")
                 finally:
@@ -173,8 +187,9 @@ class DisplayModule:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
             
-            self._shutdown_event.set()  
+            self._shutdown_event.set()
             try:
-                loop.run_until_complete(self._emergency_cleanup())
+                # Just set cleanup flag, don't try to cleanup here
+                self._is_cleaning = True
             except Exception as e:
                 display_logger.error(f"Cleanup in destructor failed: {e}")

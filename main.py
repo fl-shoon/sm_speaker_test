@@ -123,17 +123,7 @@ class Application:
             main_logger.info("Starting application cleanup...")
             
             try:
-                # Clean up speaker core first
-                if self.speaker:
-                    try:
-                        await asyncio.wait_for(self.speaker.cleanup(), timeout=5.0)
-                    except asyncio.TimeoutError:
-                        main_logger.error("Speaker cleanup timed out")
-                    except Exception as e:
-                        main_logger.error(f"Error cleaning up speaker: {e}")
-                    self.speaker = None
-
-                # Clean up server manager last
+                # Clean up server manager first to prevent reconnection attempts
                 if self.server_manager:
                     try:
                         await asyncio.wait_for(self.server_manager.cleanup(), timeout=3.0)
@@ -141,7 +131,19 @@ class Application:
                         main_logger.error("Server cleanup timed out")
                     except Exception as e:
                         main_logger.error(f"Error cleaning up server: {e}")
-                    self.server_manager = None
+                    finally:
+                        self.server_manager = None  # Clear reference immediately
+
+                # Clean up speaker core last
+                if self.speaker:
+                    try:
+                        await asyncio.wait_for(self.speaker.cleanup(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        main_logger.error("Speaker cleanup timed out")
+                    except Exception as e:
+                        main_logger.error(f"Error cleaning up speaker: {e}")
+                    finally:
+                        self.speaker = None
                 
             except Exception as e:
                 main_logger.error(f"Error during cleanup: {e}")
@@ -177,17 +179,16 @@ class Application:
             await self.cleanup()
 
 def setup_signal_handlers(app):
-    """Setup signal handlers for graceful shutdown"""
+    """Enhanced signal handlers"""
     def signal_handler(signum, frame):
         signame = signal.Signals(signum).name
         main_logger.info(f"Received {signame} signal")
         set_exit_event()
         
         # Schedule cleanup in the event loop
-        if app and asyncio.get_event_loop().is_running():
+        if app and not app._is_shutdown and asyncio.get_event_loop().is_running():
             asyncio.create_task(app.cleanup())
     
-    # Register signal handlers
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
