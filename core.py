@@ -175,59 +175,158 @@ class SpeakerCore:
         
         try:
             while conversation_active and not is_exit_event_set():
-                # Start listening display in a separate task
-                display_task = asyncio.create_task(
-                    self.display.start_listening_display(SatoruHappy)
-                )
-                
-                frames = await self.py_recorder.record_question(audio_player=self.audio_player)
-
-                if not frames:
-                    silence_count += 1
-                    if silence_count >= max_silence:
-                        core_logger.info("Maximum silence reached. Ending conversation.")
-                        conversation_active = False
-                    continue
-                else:
-                    silence_count = 0
-
-                input_audio_file = AIOutputAudio
-                self.py_recorder.save_audio(frames, input_audio_file)
-
-                # Cancel display task and stop listening display
-                if display_task and not display_task.done():
-                    display_task.cancel()
-                    try:
-                        await display_task
-                    except asyncio.CancelledError:
-                        pass
-                await self.display.stop_listening_display()
-
                 try:
-                    # Create tasks for concurrent operations
-                    conversation_ended = await self.ai_client.process_audio(input_audio_file)
-                    if conversation_ended:
-                        conversation_active = False
-                except Exception as e:
-                    core_logger.error(f"Error processing conversation: {e}")
-                    error_task = asyncio.create_task(
-                        self.audio_player.sync_audio_and_gif(ErrorAudio, SpeakingGif)
+                    # Start listening display in a separate task
+                    display_task = asyncio.create_task(
+                        self.display.start_listening_display(SatoruHappy)
                     )
-                    await error_task
+                    
+                    try:
+                        frames = await self.py_recorder.record_question(audio_player=self.audio_player)
+                    except KeyboardInterrupt:
+                        core_logger.info("Recording interrupted by user")
+                        conversation_active = False
+                        break
+                    except Exception as e:
+                        core_logger.error(f"Error during recording: {e}")
+                        raise
+
+                    if not frames:
+                        silence_count += 1
+                        if silence_count >= max_silence:
+                            core_logger.info("Maximum silence reached. Ending conversation.")
+                            conversation_active = False
+                        continue
+                    else:
+                        silence_count = 0
+
+                    try:
+                        input_audio_file = AIOutputAudio
+                        self.py_recorder.save_audio(frames, input_audio_file)
+                    except Exception as e:
+                        core_logger.error(f"Error saving audio: {e}")
+                        raise
+
+                    # Cancel display task and stop listening display
+                    if display_task and not display_task.done():
+                        try:
+                            display_task.cancel()
+                            await display_task
+                        except asyncio.CancelledError:
+                            pass
+                        except Exception as e:
+                            core_logger.error(f"Error cancelling display task: {e}")
+
+                    try:
+                        await self.display.stop_listening_display()
+                    except Exception as e:
+                        core_logger.error(f"Error stopping listening display: {e}")
+
+                    try:
+                        conversation_ended = await self.ai_client.process_audio(input_audio_file)
+                        if conversation_ended:
+                            conversation_active = False
+                    except Exception as e:
+                        core_logger.error(f"Error processing conversation: {e}")
+                        try:
+                            error_task = asyncio.create_task(
+                                self.audio_player.sync_audio_and_gif(ErrorAudio, SpeakingGif)
+                            )
+                            await error_task
+                        except Exception as play_error:
+                            core_logger.error(f"Error playing error audio: {play_error}")
+                        conversation_active = False
+
+                    await asyncio.sleep(0.1)
+
+                except Exception as e:
+                    core_logger.error(f"Error in conversation loop: {e}")
                     conversation_active = False
 
-                await asyncio.sleep(0.1)
-
+        except KeyboardInterrupt:
+            core_logger.info("Conversation interrupted by user")
+        except Exception as e:
+            core_logger.error(f"Critical error in process_conversation: {e}")
         finally:
-            # Cleanup any running display task
-            if display_task and not display_task.done():
-                display_task.cancel()
+            # Cleanup tasks in finally block
+            try:
+                # Cleanup any running display task
+                if display_task and not display_task.done():
+                    try:
+                        display_task.cancel()
+                        await display_task
+                    except (asyncio.CancelledError, Exception) as e:
+                        core_logger.error(f"Error cleaning up display task: {e}")
+
+                # Show final logo
                 try:
-                    await display_task
-                except asyncio.CancelledError:
-                    pass
-            # Show final logo
-            await self.display.fade_in_logo(SeamanLogo)
+                    await self.display.fade_in_logo(SeamanLogo)
+                except Exception as e:
+                    core_logger.error(f"Error displaying final logo: {e}")
+                    
+            except Exception as e:
+                core_logger.error(f"Error in final cleanup: {e}")
+    # async def process_conversation(self):
+    #     conversation_active = True
+    #     silence_count = 0
+    #     max_silence = 2
+    #     display_task = None
+        
+    #     try:
+    #         while conversation_active and not is_exit_event_set():
+    #             # Start listening display in a separate task
+    #             display_task = asyncio.create_task(
+    #                 self.display.start_listening_display(SatoruHappy)
+    #             )
+                
+    #             frames = await self.py_recorder.record_question(audio_player=self.audio_player)
+
+    #             if not frames:
+    #                 silence_count += 1
+    #                 if silence_count >= max_silence:
+    #                     core_logger.info("Maximum silence reached. Ending conversation.")
+    #                     conversation_active = False
+    #                 continue
+    #             else:
+    #                 silence_count = 0
+
+    #             input_audio_file = AIOutputAudio
+    #             self.py_recorder.save_audio(frames, input_audio_file)
+
+    #             # Cancel display task and stop listening display
+    #             if display_task and not display_task.done():
+    #                 display_task.cancel()
+    #                 try:
+    #                     await display_task
+    #                 except asyncio.CancelledError:
+    #                     pass
+    #             await self.display.stop_listening_display()
+
+    #             try:
+    #                 # Create tasks for concurrent operations
+    #                 conversation_ended = await self.ai_client.process_audio(input_audio_file)
+    #                 if conversation_ended:
+    #                     conversation_active = False
+    #             except Exception as e:
+    #                 core_logger.error(f"Error processing conversation: {e}")
+    #                 error_task = asyncio.create_task(
+    #                     self.audio_player.sync_audio_and_gif(ErrorAudio, SpeakingGif)
+    #                 )
+    #                 await error_task
+    #                 conversation_active = False
+
+    #             await asyncio.sleep(0.1)
+
+    #     finally:
+    #         # Cleanup any running display task
+    #         if display_task and not display_task.done():
+    #             display_task.cancel()
+    #             try:
+    #                 await display_task
+    #             except asyncio.CancelledError:
+    #                 pass
+    #         # Show final logo
+    #         await self.display.fade_in_logo(SeamanLogo)
 
     async def scheduled_conversation(self):
         conversation_active = True

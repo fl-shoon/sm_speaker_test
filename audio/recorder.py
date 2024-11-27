@@ -117,48 +117,115 @@ class PyRecorder:
         energy = np.sum(filtered_audio**2) / len(filtered_audio)
         return energy > self.energy_threshold
 
+    # async def record_question(self, audio_player):
+    #     self.start_stream()
+    #     recorder_logger.info("Listening... Speak your question.")
+
+    #     frames = []
+    #     silent_chunks = 0
+    #     is_speaking = False
+    #     total_chunks = 0
+    #     silence_duration = 2
+    #     max_duration = 30
+
+    #     max_silent_chunks = int(silence_duration * self.CHUNKS_PER_SECOND)
+
+    #     while True:
+    #         data = self.stream.read(self.CHUNK_SIZE, exception_on_overflow=False)
+    #         frames.append(data)
+    #         total_chunks += 1
+
+    #         if self.is_speech(data):
+    #             if not is_speaking:
+    #                 recorder_logger.info("Speech detected. Recording...")
+    #                 is_speaking = True
+    #             silent_chunks = 0
+    #         else:
+    #             silent_chunks += 1
+
+    #         if is_speaking:
+    #             if silent_chunks > max_silent_chunks:
+    #                 recorder_logger.info(f"End of speech detected. Total chunks: {total_chunks}")
+    #                 break
+    #         elif total_chunks > 5 * self.CHUNKS_PER_SECOND:  
+    #             recorder_logger.info("No speech detected. Stopping recording.")
+    #             self.stop_stream()
+    #             return None
+
+    #         if total_chunks > max_duration * self.CHUNKS_PER_SECOND:
+    #             recorder_logger.info(f"Maximum duration reached. Total chunks: {total_chunks}")
+    #             break
+
+    #     await audio_player.play_audio(self.beep_file)
+    #     self.stop_stream()
+    #     return b''.join(frames)
+
     async def record_question(self, audio_player):
-        self.start_stream()
-        recorder_logger.info("Listening... Speak your question.")
+        try:
+            self.start_stream()
+            recorder_logger.info("Listening... Speak your question.")
 
-        frames = []
-        silent_chunks = 0
-        is_speaking = False
-        total_chunks = 0
-        silence_duration = 2
-        max_duration = 30
+            frames = []
+            silent_chunks = 0
+            is_speaking = False
+            total_chunks = 0
+            silence_duration = 2
+            max_duration = 30
 
-        max_silent_chunks = int(silence_duration * self.CHUNKS_PER_SECOND)
+            max_silent_chunks = int(silence_duration * self.CHUNKS_PER_SECOND)
 
-        while True:
-            data = self.stream.read(self.CHUNK_SIZE, exception_on_overflow=False)
-            frames.append(data)
-            total_chunks += 1
+            while True:
+                try:
+                    data = self.stream.read(self.CHUNK_SIZE, exception_on_overflow=False)
+                    frames.append(data)
+                    total_chunks += 1
 
-            if self.is_speech(data):
-                if not is_speaking:
-                    recorder_logger.info("Speech detected. Recording...")
-                    is_speaking = True
-                silent_chunks = 0
-            else:
-                silent_chunks += 1
+                    if self.is_speech(data):
+                        if not is_speaking:
+                            recorder_logger.info("Speech detected. Recording...")
+                            is_speaking = True
+                        silent_chunks = 0
+                    else:
+                        silent_chunks += 1
 
-            if is_speaking:
-                if silent_chunks > max_silent_chunks:
-                    recorder_logger.info(f"End of speech detected. Total chunks: {total_chunks}")
-                    break
-            elif total_chunks > 5 * self.CHUNKS_PER_SECOND:  
-                recorder_logger.info("No speech detected. Stopping recording.")
+                    if is_speaking:
+                        if silent_chunks > max_silent_chunks:
+                            recorder_logger.info(f"End of speech detected. Total chunks: {total_chunks}")
+                            break
+                    elif total_chunks > 5 * self.CHUNKS_PER_SECOND:  
+                        recorder_logger.info("No speech detected. Stopping recording.")
+                        return None
+
+                    if total_chunks > max_duration * self.CHUNKS_PER_SECOND:
+                        recorder_logger.info(f"Maximum duration reached. Total chunks: {total_chunks}")
+                        break
+
+                except (OSError, IOError) as e:
+                    recorder_logger.error(f"Stream read error: {e}")
+                    return None
+                except Exception as e:
+                    recorder_logger.error(f"Unexpected error during recording: {e}")
+                    return None
+
+            try:
+                await audio_player.play_audio(self.beep_file)
+            except Exception as e:
+                recorder_logger.error(f"Error playing beep sound: {e}")
+                # Continue even if beep fails
+                
+            return b''.join(frames)
+
+        except KeyboardInterrupt:
+            recorder_logger.info("Recording interrupted by user")
+            raise
+        except Exception as e:
+            recorder_logger.error(f"Critical error in record_question: {e}")
+            return None
+        finally:
+            try:
                 self.stop_stream()
-                return None
-
-            if total_chunks > max_duration * self.CHUNKS_PER_SECOND:
-                recorder_logger.info(f"Maximum duration reached. Total chunks: {total_chunks}")
-                break
-
-        await audio_player.play_audio(self.beep_file)
-        self.stop_stream()
-        return b''.join(frames)
+            except Exception as e:
+                recorder_logger.error(f"Error stopping stream: {e}")
 
     def generate_beep_file(self):
         duration = 0.2  # seconds
