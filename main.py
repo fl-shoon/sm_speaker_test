@@ -28,6 +28,7 @@ class Application:
         self.ai_client = None
         self._cleanup_lock = asyncio.Lock()
         self._is_shutdown = False
+        self._server_session = None
 
     async def initialize(self):
         """Initialize all components"""
@@ -114,7 +115,7 @@ class Application:
         return parser.parse_args()
 
     async def cleanup(self):
-        """Enhanced cleanup with locking and shutdown flag"""
+        """Enhanced cleanup with proper session handling"""
         async with self._cleanup_lock:
             if self._is_shutdown:
                 return
@@ -123,18 +124,17 @@ class Application:
             main_logger.info("Starting application cleanup...")
             
             try:
-                # Clean up server manager first to prevent reconnection attempts
-                if self.server_manager:
+                # Close any active aiohttp session first
+                if hasattr(self.server_manager, 'session') and self.server_manager.session:
                     try:
-                        await asyncio.wait_for(self.server_manager.cleanup(), timeout=3.0)
-                    except asyncio.TimeoutError:
-                        main_logger.error("Server cleanup timed out")
+                        await asyncio.wait_for(
+                            self.server_manager.session.close(),
+                            timeout=2.0
+                        )
                     except Exception as e:
-                        main_logger.error(f"Error cleaning up server: {e}")
-                    finally:
-                        self.server_manager = None  # Clear reference immediately
+                        main_logger.error(f"Error closing server session: {e}")
 
-                # Clean up speaker core last
+                # Clean up components
                 if self.speaker:
                     try:
                         await asyncio.wait_for(self.speaker.cleanup(), timeout=5.0)
@@ -144,7 +144,17 @@ class Application:
                         main_logger.error(f"Error cleaning up speaker: {e}")
                     finally:
                         self.speaker = None
-                
+
+                if self.server_manager:
+                    try:
+                        await asyncio.wait_for(self.server_manager.cleanup(), timeout=3.0)
+                    except asyncio.TimeoutError:
+                        main_logger.error("Server cleanup timed out")
+                    except Exception as e:
+                        main_logger.error(f"Error cleaning up server: {e}")
+                    finally:
+                        self.server_manager = None
+
             except Exception as e:
                 main_logger.error(f"Error during cleanup: {e}")
             finally:
@@ -154,7 +164,15 @@ class Application:
                 self.fire_client = None
                 self.schedule_manager = None
                 self.ai_client = None
+                
+                # Wait a moment to ensure all connections are closed
+                await asyncio.sleep(0.5)
                 main_logger.info("Application cleanup completed")
+
+    def __del__(self):
+        """Ensure cleanup on deletion"""
+        if not self._is_shutdown and asyncio.get_event_loop().is_running():
+            asyncio.create_task(self.cleanup())
 
     async def run(self):
         """Main application run loop"""

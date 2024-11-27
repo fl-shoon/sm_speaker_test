@@ -45,26 +45,104 @@ class PicoVoiceTrigger:
             raise RuntimeError(f"Failed to initialize PicoVoice after {max_retries} attempts")
 
     def _force_release_audio(self):
-        """Enhanced force release of ALSA audio device"""
+        """More aggressive force release of ALSA audio device"""
         try:
-            # Kill processes using audio
-            os.system('fuser -k /dev/snd/* 2>/dev/null')
-            time.sleep(0.2)
-            
-            # Reset ALSA completely
+            # First try a gentle cleanup
             os.system('alsactl kill rescan')
             os.system('alsactl restore')
+            time.sleep(0.2)
+
+            # Then try to remove ALSA locks
+            os.system('rm -f /var/lib/alsa/asound.state.lock')
             os.system('rm -rf /var/run/alsa/runtime-*')
             time.sleep(0.2)
 
-            # Additional cleanup
-            os.system('pulseaudio -k 2>/dev/null || true')
+            # Kill any hanging audio processes
+            os.system('killall -9 pulseaudio 2>/dev/null || true')
+            os.system('killall -9 alsactl 2>/dev/null || true')
+            os.system('fuser -k -9 /dev/snd/* 2>/dev/null || true')
+            time.sleep(0.5)
+
+            # Reload ALSA subsystem
             os.system('alsa force-reload 2>/dev/null || true')
-            os.system('aplay -l 2>/dev/null || true')  # List devices to reset
+            time.sleep(1.0)
+
+            # Final restore
+            os.system('alsactl restore')
             time.sleep(0.5)
             
         except Exception as e:
             pico_logger.error(f"Error during audio device release: {e}")
+
+    def _initialize_audio(self):
+        """Initialize audio with extra precautions"""
+        try:
+            # Always force release first
+            self._force_release_audio()
+            
+            if not self._validate_audio_device():
+                pico_logger.error("Audio device validation failed")
+                return False
+
+            # Close any existing PyAudio instance
+            if self.audio:
+                try:
+                    if self.audio_stream:
+                        self.audio_stream.stop_stream()
+                        self.audio_stream.close()
+                    self.audio.terminate()
+                except:
+                    pass
+                self.audio = None
+                self.audio_stream = None
+                time.sleep(0.5)
+
+            # Create new PyAudio instance
+            self.audio = pyaudio.PyAudio()
+            
+            # Get device info
+            device_info = self.audio.get_device_info_by_index(self.device_index)
+            pico_logger.info(f"Using audio device: {device_info['name']}")
+            
+            # Open stream with minimal buffer size first
+            test_stream = self.audio.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=16000,
+                frames_per_buffer=256,  # Start with small buffer
+                input=True,
+                input_device_index=self.device_index,
+                start=False
+            )
+            
+            # Test the stream
+            test_stream.start_stream()
+            test_data = test_stream.read(256, exception_on_overflow=False)
+            test_stream.stop_stream()
+            test_stream.close()
+            
+            if not test_data:
+                raise RuntimeError("Test stream returned no data")
+                
+            # If test successful, open actual stream
+            self.audio_stream = self.audio.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=16000,
+                frames_per_buffer=self.frame_length,
+                input=True,
+                input_device_index=self.device_index,
+                start=False
+            )
+            
+            self.audio_stream.start_stream()
+            pico_logger.info("Audio stream initialized successfully")
+            return True
+                
+        except Exception as e:
+            pico_logger.error(f"Error in audio initialization: {e}")
+            self._force_release_audio()
+            return False
 
     def _validate_audio_device(self):
         """Enhanced audio device validation"""
@@ -115,45 +193,6 @@ class PicoVoiceTrigger:
                 time.sleep(1)
                 
         return False
-
-    def _initialize_audio(self):
-        """Enhanced audio initialization"""
-        if not self._validate_audio_device():
-            pico_logger.error("Audio device validation failed")
-            return False
-
-        try:
-            if self.audio is None:
-                self.audio = pyaudio.PyAudio()
-            
-            # Always close existing stream
-            if self.audio_stream is not None:
-                try:
-                    self.audio_stream.stop_stream()
-                    self.audio_stream.close()
-                except:
-                    pass
-                self.audio_stream = None
-            
-            # Open new stream
-            self.audio_stream = self.audio.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=16000,
-                frames_per_buffer=self.frame_length,
-                input=True,
-                input_device_index=self.device_index,
-                start=False
-            )
-            
-            self.audio_stream.start_stream()
-            pico_logger.info("Audio stream initialized successfully")
-            return True
-            
-        except Exception as e:
-            pico_logger.error(f"Error in audio initialization: {e}")
-            self._force_release_audio()
-            return False
 
     def initialize(self, args):
         """Initialize Porcupine and audio stream"""
