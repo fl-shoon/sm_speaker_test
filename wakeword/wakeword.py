@@ -27,19 +27,43 @@ class WakeWord:
         self.calibration_task = None
         self._cleanup_lock = asyncio.Lock()
 
-        self.initialize_pyaudio()
+        self.CHANNELS = CHANNELS  
+        self.RATE = RATE 
+        self.FORMAT = FORMAT
+        self.CHUNK = 512
 
         try:
             self.porcupine = PicoVoiceTrigger(args)
+            if self.porcupine and hasattr(self.porcupine, 'frame_length'):
+                self.CHUNK = self.porcupine.frame_length
         except Exception as e:
             wakeword_logger.error(f"Failed to initialize PicoVoice: {e}")
+            self.porcupine = None
+
+        self.initialize_pyaudio()
 
     def initialize_pyaudio(self):
-        # PyAudio configuration
-        self.CHANNELS = 1  
-        self.RATE = 16000 
-        self.FORMAT = pyaudio.paInt16
-        self.CHUNK = self.porcupine.frame_length
+        try:
+            if self.pyaudio_instance is None:
+                self.pyaudio_instance = pyaudio.PyAudio()
+            
+            if self.audio_stream is None:
+                self.audio_stream = self.pyaudio_instance.open(
+                    format=self.FORMAT,
+                    channels=self.CHANNELS,
+                    rate=self.RATE,
+                    input=True,
+                    frames_per_buffer=self.CHUNK
+                )
+                wakeword_logger.info("PyAudio recorder initialized successfully")
+        except Exception as e:
+            wakeword_logger.error(f"Failed to initialize PyAudio recorder: {e}")
+            if self.pyaudio_instance:
+                try:
+                    self.pyaudio_instance.terminate()
+                except:
+                    pass
+                self.pyaudio_instance = None
         
     def initialize_recorder(self):
         if self.audio_stream is None:
@@ -88,8 +112,13 @@ class WakeWord:
                 wakeword_logger.error("PicoVoice not initialized - cannot listen for wake word")
                 return False, WakeWordType.OTHER
             
+            if self.audio_stream is None:
+                self.initialize_pyaudio()
+                if self.audio_stream is None:
+                    wakeword_logger.error("Failed to initialize audio stream")
+                    return False, WakeWordType.OTHER
+                
             self.initialize_recorder()
-            # self.pv_recorder.start()
 
             frame_bytes = []
             calibration_interval = 5
@@ -230,6 +259,7 @@ class WakeWord:
             if self.porcupine:
                 try:
                     self.porcupine.cleanup()
+                    self.porcupine = None
                 except Exception as e:
                     wakeword_logger.error(f"Error terminating PicoVoice: {e}")
 
