@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import pvporcupine
 import pyaudio
+import signal
 import time
 import threading
 
@@ -160,7 +161,8 @@ class PicoVoiceTrigger:
         """Cleanup resources"""
         pico_logger.info("Starting cleanup process...")
         
-        with self._lock:
+        try:
+            # Clean up in reverse order of initialization
             if self.audio_stream is not None:
                 try:
                     if self.audio_stream.is_active():
@@ -179,18 +181,27 @@ class PicoVoiceTrigger:
                 finally:
                     self.audio = None
 
+            # Handle Porcupine cleanup separately
             if self.porcupine is not None:
                 try:
+                    # Add a timeout for delete operation
+                    signal.alarm(2)  # Set 2 second alarm
                     self.porcupine.delete()
+                    signal.alarm(0)  # Disable alarm
                 except Exception as e:
                     pico_logger.error(f"Error deleting Porcupine instance: {e}")
                 finally:
                     self.porcupine = None
+                    signal.alarm(0)  # Ensure alarm is disabled
 
-            # Small delay to ensure resources are released
-            time.sleep(0.1)
-
-        pico_logger.info("Cleanup completed")
+        except Exception as e:
+            pico_logger.error(f"Error during PicoVoice cleanup: {e}")
+        finally:
+            # Ensure everything is set to None
+            self.audio_stream = None
+            self.audio = None
+            self.porcupine = None
+            pico_logger.info("Cleanup completed")
 
     def _create_porcupine(self, access_key, model_path, keyword_paths, sensitivities):
         """Create and return Porcupine instance with error handling"""
