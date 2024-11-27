@@ -8,7 +8,7 @@ import pvporcupine
 import pyaudio
 import time
 from threading import Event
-from utils.define import *
+# from utils.define import *
 
 # Initialize logging
 logging.basicConfig(
@@ -16,6 +16,14 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(CURRENT_DIR)
+ASSETS_DIR = os.path.join(PARENT_DIR, 'assets')
+VOICE_TRIGGER_DIR = os.path.join(ASSETS_DIR, 'trigger')
+PicoLangModel = os.path.join(VOICE_TRIGGER_DIR,"pico_voice_language_model_ja.pv")
+PicoWakeWordKonnichiwa = os.path.join(VOICE_TRIGGER_DIR,"pico_voice_wake_word_konnichiwa.ppn") 
+PicoWakeWordSatoru = os.path.join(VOICE_TRIGGER_DIR,"pico_voice_wake_word_satoru.ppn") 
 
 # Global exit event for graceful shutdown
 exit_event = Event()
