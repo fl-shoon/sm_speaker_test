@@ -26,9 +26,14 @@ class Application:
         self.fire_client = None
         self.schedule_manager = None
         self.ai_client = None
+        self._cleanup_lock = asyncio.Lock()
+        self._is_shutdown = False
 
     async def initialize(self):
         """Initialize all components"""
+        if self._is_shutdown:
+            return False
+        
         try:
             # Initialize AI client
             self.ai_client = ConversationClient()
@@ -41,13 +46,18 @@ class Application:
             args = self.setup_arguments()
             
             # Initialize core components
-            self.speaker = SpeakerCore(args)
-            # self.fire_client = FireClient()
-            # self.schedule_manager = ScheduleManager(
-            #     server_manager=self.server_manager,
-            #     fire_client=self.fire_client
-            # )
-            self.ai_client.setAudioPlayer(self.speaker.audio_player)
+            try:
+                self.speaker = SpeakerCore(args)
+                # self.fire_client = FireClient()
+                # self.schedule_manager = ScheduleManager(
+                #     server_manager=self.server_manager,
+                #     fire_client=self.fire_client
+                # )
+                self.ai_client.setAudioPlayer(self.speaker.audio_player)
+            except Exception as e:
+                main_logger.error(f"Failed to initialize speaker core: {e}")
+                await self.cleanup()
+                return False
             
             return True
         except Exception as e:
@@ -104,31 +114,52 @@ class Application:
         return parser.parse_args()
 
     async def cleanup(self):
-        """Cleanup all resources"""
-        main_logger.info("Starting application cleanup...")
-        cleanup_tasks = []
-        
-        try:
-            # Clean up speaker core
-            if self.speaker:
-                cleanup_tasks.append(self.speaker.cleanup())
-            
-            # Clean up server manager
-            if self.server_manager:
-                cleanup_tasks.append(self.server_manager.cleanup())
-            
-            # Wait for all cleanup tasks to complete
-            if cleanup_tasks:
-                await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+        """Enhanced cleanup with locking and shutdown flag"""
+        async with self._cleanup_lock:
+            if self._is_shutdown:
+                return
                 
-        except Exception as e:
-            main_logger.error(f"Error during cleanup: {e}")
-        finally:
-            main_logger.info("Application cleanup completed")
+            self._is_shutdown = True
+            main_logger.info("Starting application cleanup...")
+            
+            try:
+                # Clean up speaker core first
+                if self.speaker:
+                    try:
+                        await asyncio.wait_for(self.speaker.cleanup(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        main_logger.error("Speaker cleanup timed out")
+                    except Exception as e:
+                        main_logger.error(f"Error cleaning up speaker: {e}")
+                    self.speaker = None
+
+                # Clean up server manager last
+                if self.server_manager:
+                    try:
+                        await asyncio.wait_for(self.server_manager.cleanup(), timeout=3.0)
+                    except asyncio.TimeoutError:
+                        main_logger.error("Server cleanup timed out")
+                    except Exception as e:
+                        main_logger.error(f"Error cleaning up server: {e}")
+                    self.server_manager = None
+                
+            except Exception as e:
+                main_logger.error(f"Error during cleanup: {e}")
+            finally:
+                # Force cleanup of all references
+                self.speaker = None
+                self.server_manager = None
+                self.fire_client = None
+                self.schedule_manager = None
+                self.ai_client = None
+                main_logger.info("Application cleanup completed")
 
     async def run(self):
         """Main application run loop"""
         try:
+            if self._is_shutdown:
+                return
+            
             # Initialize all components
             if not await self.initialize():
                 main_logger.error("Initialization failed, exiting...")
