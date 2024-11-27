@@ -227,41 +227,87 @@ class WakeWord:
             wakeword_logger.error(f"Error in wake word detection: {e}")
             return False, WakeWordType.OTHER
         finally:
+            # Cancel all tasks first
             for task in tasks:
                 if not task.done():
                     task.cancel()
                     try:
-                        await task
-                    except asyncio.CancelledError:
+                        await asyncio.wait_for(task, timeout=1.0)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
                         pass
-            await self.cleanup_recorder()
+            
+            # Then clean up recorder with timeout
+            try:
+                await asyncio.wait_for(self.cleanup_recorder(), timeout=10.0)
+            except asyncio.TimeoutError:
+                wakeword_logger.error("Recorder cleanup timed out in listen_for_wake_word")
+            except Exception as e:
+                wakeword_logger.error(f"Error during recorder cleanup in listen_for_wake_word: {e}")
 
         return False, None
     
     async def cleanup_recorder(self):
-        """Enhanced cleanup with proper locking"""
-        async with self._cleanup_lock:
-            if self.audio_stream:
-                try:
-                    self.audio_stream.stop_stream()
-                    self.audio_stream.close()
-                    self.audio_stream = None
-                except Exception as e:
-                    wakeword_logger.error(f"Error stopping audio stream: {e}")
+        """Enhanced cleanup with proper locking and timeout"""
+        try:
+            async with asyncio.timeout(5.0):  # Add timeout to prevent hanging
+                async with self._cleanup_lock:
+                    wakeword_logger.info("Starting recorder cleanup...")
+                    
+                    # Clean up PyAudio first
+                    if self.audio_stream:
+                        try:
+                            if hasattr(self.audio_stream, 'is_active') and self.audio_stream.is_active():
+                                self.audio_stream.stop_stream()
+                            self.audio_stream.close()
+                            self.audio_stream = None
+                            wakeword_logger.info("Audio stream cleaned up")
+                        except Exception as e:
+                            wakeword_logger.error(f"Error stopping audio stream: {e}")
 
-            if self.pyaudio_instance:
-                try:
-                    self.pyaudio_instance.terminate()
-                    self.pyaudio_instance = None
-                except Exception as e:
-                    wakeword_logger.error(f"Error terminating PyAudio: {e}")
+                    if self.pyaudio_instance:
+                        try:
+                            self.pyaudio_instance.terminate()
+                            self.pyaudio_instance = None
+                            wakeword_logger.info("PyAudio instance terminated")
+                        except Exception as e:
+                            wakeword_logger.error(f"Error terminating PyAudio: {e}")
 
-            if self.porcupine:
-                try:
-                    self.porcupine.cleanup()
-                    self.porcupine = None
-                except Exception as e:
-                    wakeword_logger.error(f"Error terminating PicoVoice: {e}")
+                    # Clean up Porcupine last since it might be hanging
+                    if self.porcupine:
+                        try:
+                            # Create a separate task for porcupine cleanup with timeout
+                            await asyncio.wait_for(
+                                self._cleanup_porcupine(),
+                                timeout=2.0
+                            )
+                        except asyncio.TimeoutError:
+                            wakeword_logger.error("Porcupine cleanup timed out")
+                        except Exception as e:
+                            wakeword_logger.error(f"Error cleaning up Porcupine: {e}")
+                        finally:
+                            self.porcupine = None
+
+                    wakeword_logger.info("Recorder cleanup completed")
+
+        except asyncio.TimeoutError:
+            wakeword_logger.error("Recorder cleanup timed out")
+        except Exception as e:
+            wakeword_logger.error(f"Error during recorder cleanup: {e}")
+
+    async def _cleanup_porcupine(self):
+        """Separate method for Porcupine cleanup to handle timeouts"""
+        if self.porcupine:
+            try:
+                # Run the potentially blocking cleanup in a thread pool
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: self.porcupine.cleanup() if hasattr(self.porcupine, 'cleanup') else None
+                )
+                wakeword_logger.info("Porcupine cleanup completed")
+            except Exception as e:
+                wakeword_logger.error(f"Error in Porcupine cleanup: {e}")
+                raise
 
     def __del__(self):
         """Enhanced destructor with proper cleanup"""
