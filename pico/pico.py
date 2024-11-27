@@ -166,7 +166,7 @@ class PicoVoiceTrigger:
         try:
             with self._lock:
                 # Close any existing resources first
-                self.cleanup()
+                # self.cleanup()
                 time.sleep(0.1)  # Brief pause to ensure resources are released
                 
                 # Initialize Porcupine
