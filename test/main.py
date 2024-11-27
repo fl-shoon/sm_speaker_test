@@ -130,3 +130,10 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nShutdown requested...")
+    finally:
+        # If player exists in global scope
+        if 'player' in globals() and player:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(player.cleanup())
+            loop.close()

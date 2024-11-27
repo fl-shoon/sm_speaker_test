@@ -180,10 +180,19 @@ class AudioPlayer:
     def __del__(self):
         """Ensure cleanup runs"""
         if self.current_stream or self.pyaudio_instance:
-            if asyncio.get_event_loop().is_running():
-                asyncio.create_task(self.cleanup())
-            else:
-                # Synchronous cleanup as fallback
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self.cleanup())
+                else:
+                    # Synchronous cleanup as fallback
+                    if self.current_stream:
+                        self.current_stream.stop_stream()
+                        self.current_stream.close()
+                    if self.pyaudio_instance:
+                        self.pyaudio_instance.terminate()
+            except RuntimeError:
+                # Fallback for when no event loop is available
                 if self.current_stream:
                     self.current_stream.stop_stream()
                     self.current_stream.close()

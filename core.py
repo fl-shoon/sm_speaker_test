@@ -312,6 +312,10 @@ class SpeakerCore:
                 except Exception as e:
                     core_logger.error(f"Error in display cleanup: {e}")
                     
+            if self.audio_player:
+                await self.audio_player.cleanup()
+                self.audio_player = None
+            
             if cleanup_tasks:
                 await asyncio.gather(*cleanup_tasks)
                     
