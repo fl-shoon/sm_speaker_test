@@ -176,6 +176,17 @@ class SpeakerCore:
         try:
             while conversation_active and not is_exit_event_set():
                 try:
+                    if display_task and not display_task.done():
+                        try:
+                            display_task.cancel()
+                            await asyncio.wait_for(display_task, timeout=1.0)
+                        except (asyncio.TimeoutError, asyncio.CancelledError):
+                            pass
+                    
+                    # Clear display before starting new task
+                    await self.display.send_white_frames()
+                    await asyncio.sleep(0.1)  # Wait for display to clear
+                    
                     display_task = asyncio.create_task(
                         self.display.start_listening_display(SatoruHappy)
                     )
@@ -188,13 +199,15 @@ class SpeakerCore:
                             core_logger.info("Maximum silence reached. Ending conversation.")
                             conversation_active = False
                         
-                        # Cancel display task before continuing
+                        # Ensure display task is properly cancelled
                         if display_task and not display_task.done():
                             try:
                                 display_task.cancel()
                                 await asyncio.wait_for(display_task, timeout=1.0)
+                                await self.display.stop_listening_display()
+                                await asyncio.sleep(0.1)  # Wait for cleanup
                             except (asyncio.TimeoutError, asyncio.CancelledError):
-                                pass
+                                core_logger.warning("Display task cancellation timed out")
                         continue
 
                     silence_count = 0
@@ -208,13 +221,9 @@ class SpeakerCore:
                             await asyncio.wait_for(display_task, timeout=1.0)
                         except (asyncio.TimeoutError, asyncio.CancelledError):
                             core_logger.warning("Display task cancellation timed out")
-                        except Exception as e:
-                            core_logger.error(f"Error cancelling display task: {e}")
 
-                    try:
-                        await self.display.stop_listening_display()
-                    except Exception as e:
-                        core_logger.error(f"Error stopping listening display: {e}")
+                    await self.display.stop_listening_display()
+                    await asyncio.sleep(0.1)
 
                     try:
                         conversation_ended = await self.ai_client.process_audio(input_audio_file)
@@ -223,6 +232,8 @@ class SpeakerCore:
                     except Exception as e:
                         core_logger.error(f"Error processing conversation: {e}")
                         try:
+                            await self.display.send_white_frames()
+                            await asyncio.sleep(0.1)
                             error_task = asyncio.create_task(
                                 self.audio_player.sync_audio_and_gif(ErrorAudio, SpeakingGif)
                             )
@@ -230,8 +241,6 @@ class SpeakerCore:
                         except Exception as play_error:
                             core_logger.error(f"Error playing error audio: {play_error}")
                         conversation_active = False
-
-                    await asyncio.sleep(0.1)
 
                 except Exception as e:
                     core_logger.error(f"Error in conversation loop: {e}")
@@ -242,20 +251,22 @@ class SpeakerCore:
         except Exception as e:
             core_logger.error(f"Critical error in process_conversation: {e}")
         finally:
-            if display_task and not display_task.done():
-                try:
-                    display_task.cancel()
-                    await asyncio.wait_for(display_task, timeout=1.0)
-                except (asyncio.TimeoutError, asyncio.CancelledError):
-                    core_logger.warning("Final display task cleanup timed out")
-                except Exception as e:
-                    core_logger.error(f"Error in final display task cleanup: {e}")
-
-                # Show final logo
-                try:
-                    await self.display.fade_in_logo(SeamanLogo)
-                except Exception as e:
-                    core_logger.error(f"Error displaying final logo: {e}")
+            try:
+                if display_task and not display_task.done():
+                    try:
+                        display_task.cancel()
+                        await asyncio.wait_for(display_task, timeout=1.0)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        core_logger.warning("Final display task cleanup timed out")
+                
+                # Multiple cleanup attempts for display
+                for _ in range(3):
+                    await self.display.send_white_frames()
+                    await asyncio.sleep(0.1)
+                
+                await self.display.fade_in_logo(SeamanLogo)
+            except Exception as e:
+                core_logger.error(f"Error in final display cleanup: {e}")
     # async def process_conversation(self):
     #     conversation_active = True
     #     silence_count = 0

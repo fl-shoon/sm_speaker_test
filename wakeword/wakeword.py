@@ -80,7 +80,7 @@ class WakeWord:
             
             # Check if any wake word is in the transcription
             transcribed_text = transcript.text.strip().lower()
-            wakeword_logger.info(f"Transcribed: {transcribed_text}")
+            # wakeword_logger.info(f"Transcribed: {transcribed_text}")
             
             for wake_word in self.WAKE_WORDS:
                 if wake_word in transcribed_text:

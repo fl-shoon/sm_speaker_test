@@ -31,6 +31,8 @@ class DisplayModule:
         self._cleanup_lock = asyncio.Lock()
         self._is_cleaning = False
         self._shutdown_event = asyncio.Event()
+        self._current_display_task = None  
+        self._transition_lock = asyncio.Lock()
 
     def set_player_for_display(self, player):
         self.player = player
@@ -122,10 +124,25 @@ class DisplayModule:
             raise
 
     async def start_listening_display(self, image_path):
-        await self.display_image(image_path)
+        """Start listening display with proper transition handling"""
+        async with self._transition_lock:
+            # Cancel any existing display task
+            if self._current_display_task and not self._current_display_task.done():
+                self._current_display_task.cancel()
+                try:
+                    await asyncio.wait_for(self._current_display_task, timeout=1.0)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    pass
+                
+            # Clear display before showing new image
+            await self.send_white_frames()
+            await asyncio.sleep(0.1)  # Wait for display to clear
+            
+            # Set new display task
+            await self.display_image(image_path)
 
     async def send_white_frames(self):
-        """Send white frames to clear display"""
+        """Enhanced white frame sending with multiple attempts"""
         if self._shutdown_event.is_set():
             return
             
@@ -133,13 +150,27 @@ class DisplayModule:
             white_img = Image.new('RGB', (240, 240), color='white')
             encoded_data = self.display_manager.encode_image_to_bytes(white_img)
             
-            await self.display_manager.send_image(encoded_data)
-            await asyncio.sleep(0.05)
+            # Send multiple white frames to ensure display is cleared
+            for _ in range(2):
+                await self.display_manager.send_image(encoded_data)
+                await asyncio.sleep(0.05)
         except Exception as e:
             display_logger.error(f"Error sending white frames: {e}")
 
     async def stop_listening_display(self):
-        await self.send_white_frames()
+        """Stop listening display with proper cleanup"""
+        async with self._transition_lock:
+            if self._current_display_task and not self._current_display_task.done():
+                self._current_display_task.cancel()
+                try:
+                    await asyncio.wait_for(self._current_display_task, timeout=1.0)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    pass
+                
+            # Send multiple white frames to ensure display is cleared
+            for _ in range(3):
+                await self.send_white_frames()
+                await asyncio.sleep(0.05)
 
     async def _emergency_cleanup(self):
         """Emergency cleanup for unexpected shutdowns"""
