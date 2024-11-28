@@ -20,10 +20,10 @@ class WakeWord:
         self.audio_stream = None
         self.play_trigger = None
         self.server = args.server
+        self.ai_client = args.aiclient
         self._cleanup_lock = asyncio.Lock()
         
-        # Initialize OpenAI client
-        self.client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        # self.client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
         
         # Audio settings
         self.CHANNELS = 1
@@ -32,9 +32,7 @@ class WakeWord:
         self.CHUNK = 1024 * 2  # 2048 samples = ~128ms at 16kHz
         self.RECORD_SECONDS = 2  # Process 2 seconds of audio at a time
         
-        # Wake word settings
         self.WAKE_WORDS = ["こんにちは", "聞いて", "お願い"]
-        
         self.initialize_pyaudio()
 
     def initialize_pyaudio(self):
@@ -60,23 +58,37 @@ class WakeWord:
                     pass
                 self.pyaudio_instance = None
 
+    async def play_audio_with_retry(self, audio_file, max_retries=3):
+        for attempt in range(max_retries):
+            try:
+                wakeword_logger.info(f"Audio playback attempt {attempt + 1}")
+                await self.audio_player.play_audio(audio_file)
+                wakeword_logger.info("Audio playback successful")
+                return True
+            except Exception as e:
+                wakeword_logger.error(f"Audio playback attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(0.2)
+        return False
+    
     async def check_for_wake_word(self, audio_frames):
         try:
             temp_file = "/tmp/wake_check.wav"
             self.save_audio(audio_frames, temp_file)
             
+            transcribed_text = self.ai_client.speech_to_text(temp_file).strip().lower()
             # Transcribe with Whisper
-            with open(temp_file, "rb") as audio_file:
-                transcript = self.client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language="ja",
-                    temperature=0.0,
-                    prompt="「こんにちは」「聞いて」「お願い」などの呼びかけの言葉を検出してください。"
-                )
+            # with open(temp_file, "rb") as audio_file:
+            #     transcript = self.client.audio.transcriptions.create(
+            #         model="whisper-1",
+            #         file=audio_file,
+            #         language="ja",
+            #         temperature=0.0,
+            #         prompt="「こんにちは」「聞いて」「お願い」などの呼びかけの言葉を検出してください。"
+            #     )
             
             # Check if any wake word is in the transcription
-            transcribed_text = transcript.text.strip().lower()
+            # transcribed_text = transcript.text.strip().lower()
             
             # for wake_word in self.WAKE_WORDS:
             #     if wake_word in transcribed_text:
@@ -86,19 +98,18 @@ class WakeWord:
                 if wake_word in transcribed_text:
                     wakeword_logger.info(f"Wake word detected: {wake_word}")
                     try:
+                        # Stop recording stream
                         if self.audio_stream:
                             self.audio_stream.stop_stream()
-                        await asyncio.sleep(0.2)  
-                        
+                        await asyncio.sleep(0.2)  # Wait for audio device to settle
+
+                        # Play response audio directly through audio player
                         wakeword_logger.info("Playing wake word response sound...")
-                        await self.audio_player.play_audio(ResponseAudio)
-                        wakeword_logger.info("Wake word response sound completed")
+                        if not await self.play_audio_with_retry(ResponseAudio):
+                            wakeword_logger.error("Failed to play response sound after retries")
                         
-                        await asyncio.sleep(0.2)  
+                        await asyncio.sleep(0.2)  # Wait before resuming recording
                         return True
-                    except Exception as e:
-                        wakeword_logger.error(f"Error playing response sound: {e}")
-                        return True  
                     finally:
                         if self.audio_stream:
                             self.audio_stream.start_stream()

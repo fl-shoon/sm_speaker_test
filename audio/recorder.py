@@ -191,46 +191,22 @@ class PyRecorder:
 
             if frames:
                 try:
-                    # Stop recording stream
-                    if self.stream and self.stream.is_active():
-                        recorder_logger.info("Stopping recording stream for beep playback")
-                        self.stream.stop_stream()
-                    await asyncio.sleep(0.2)
-
-                    # Play beep with retry
-                    recorder_logger.info("Playing end-of-recording beep")
-                    await audio_player.play_audio(self.beep_file)
-                    recorder_logger.info("Beep playback completed")
-
-                    await asyncio.sleep(0.2)  
+                    recorder_logger.info("Stopping recording stream for beep playback")
+                    if not await self.play_beep_with_retry(audio_player):
+                        recorder_logger.error("Failed to play beep after retries")
                     return b''.join(frames)
-                    # for attempt in range(3):
-                    #     try:
-                    #         beep_play_task = asyncio.create_task(
-                    #             audio_player.play_audio(self.beep_file)
-                    #         )
-                    #         tasks.add(beep_play_task)
-                    #         await asyncio.wait_for(beep_play_task, timeout=1.0)
-                    #         break
-                    #     except Exception as e:
-                    #         recorder_logger.error(f"Attempt {attempt + 1} to play beep failed: {e}")
-                    #         if attempt < 2:  
-                    #             await asyncio.sleep(0.1)
 
                 except Exception as e:
                     recorder_logger.error(f"Error playing beep sound: {e}")
                     return b''.join(frames)
                 finally:
                     try:
+                        await asyncio.sleep(0.2)
                         if self.stream:
                             self.stream.start_stream()
-                        # await asyncio.sleep(0.1)  
-                        # if self.stream:
-                        #     self.stream.start_stream()
                     except Exception as e:
                         recorder_logger.error(f"Error restarting stream: {e}")
 
-            # return b''.join(frames) if frames else None
             return None
 
         except KeyboardInterrupt:
@@ -252,6 +228,22 @@ class PyRecorder:
             except Exception as e:
                 recorder_logger.error(f"Error in cleanup: {e}")
 
+    async def play_beep_with_retry(self, audio_player, max_retries=3):
+        for attempt in range(max_retries):
+            try:
+                recorder_logger.info(f"Beep playback attempt {attempt + 1}")
+                if self.stream and self.stream.is_active():
+                    self.stream.stop_stream()
+                await asyncio.sleep(0.2)
+
+                await audio_player.play_audio(self.beep_file)
+                recorder_logger.info("Beep playback successful")
+                return True
+            except Exception as e:
+                recorder_logger.error(f"Beep playback attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(0.2)
+        return False
     def generate_beep_file(self):
         duration = 0.2  # seconds
         frequency = 880  # Hz (A5 note)
