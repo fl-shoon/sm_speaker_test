@@ -61,9 +61,7 @@ class WakeWord:
                 self.pyaudio_instance = None
 
     async def check_for_wake_word(self, audio_frames):
-        """Check audio for wake word using OpenAI Whisper"""
         try:
-            # Save audio frames to temporary file
             temp_file = "/tmp/wake_check.wav"
             self.save_audio(audio_frames, temp_file)
             
@@ -79,12 +77,31 @@ class WakeWord:
             
             # Check if any wake word is in the transcription
             transcribed_text = transcript.text.strip().lower()
-            # wakeword_logger.info(f"Transcribed: {transcribed_text}")
             
+            # for wake_word in self.WAKE_WORDS:
+            #     if wake_word in transcribed_text:
+            #         wakeword_logger.info(f"Wake word detected: {wake_word}")
+            #         return True
             for wake_word in self.WAKE_WORDS:
                 if wake_word in transcribed_text:
                     wakeword_logger.info(f"Wake word detected: {wake_word}")
-                    return True
+                    try:
+                        if self.audio_stream:
+                            self.audio_stream.stop_stream()
+                        await asyncio.sleep(0.2)  
+                        
+                        wakeword_logger.info("Playing wake word response sound...")
+                        await self.audio_player.play_audio(ResponseAudio)
+                        wakeword_logger.info("Wake word response sound completed")
+                        
+                        await asyncio.sleep(0.2)  
+                        return True
+                    except Exception as e:
+                        wakeword_logger.error(f"Error playing response sound: {e}")
+                        return True  
+                    finally:
+                        if self.audio_stream:
+                            self.audio_stream.start_stream()
             
             return False
             
@@ -205,19 +222,6 @@ class WakeWord:
             button_check_interval = 1.5
             chunks_per_check = int(self.RECORD_SECONDS * self.RATE / self.CHUNK)
             
-            # if self.play_trigger is None:
-            #     if self.audio_stream:
-            #         self.audio_stream.stop_stream()
-
-            #     trigger_task = asyncio.create_task(
-            #         self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
-            #     )
-            #     tasks.add(trigger_task)
-            #     await trigger_task
-            #     self.play_trigger = True
-
-            #     if self.audio_stream:
-            #         self.audio_stream.start_stream()
             if self.play_trigger is None:
                 try:
                     if self.audio_stream:
@@ -246,10 +250,6 @@ class WakeWord:
                     
                     frames = []
                     # Record audio chunks
-                    # for _ in range(chunks_per_check):
-                    #     data = self.audio_stream.read(self.CHUNK, exception_on_overflow=False)
-                    #     frames.append(data)
-                    #     frame_bytes.append(data)
                     for _ in range(chunks_per_check):
                         if is_exit_event_set():
                             raise KeyboardInterrupt
@@ -305,11 +305,6 @@ class WakeWord:
                                 self.audio_stream.stop_stream()
                             await asyncio.sleep(0.1)
 
-                            # response_task = asyncio.create_task(
-                            #     self.audio_player.play_audio(ResponseAudio)
-                            # )
-                            # tasks.add(response_task)
-                            # await asyncio.wait_for(response_task, timeout=2.0)
                             for attempt in range(3):
                                 try:
                                     response_task = asyncio.create_task(
