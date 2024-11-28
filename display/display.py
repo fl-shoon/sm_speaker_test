@@ -2,7 +2,6 @@ from contextlib import contextmanager
 from PIL import Image, ImageEnhance
 
 import asyncio
-import io 
 import logging
 import os
 
@@ -39,7 +38,6 @@ class DisplayModule:
         self.player = player
         
     async def fade_in_logo(self, logo_path):
-        """Fade in a logo image with brightness control"""
         try: 
             img = Image.open(logo_path)
             width, height = img.size
@@ -136,7 +134,6 @@ class DisplayModule:
                 self._current_display_task = None
 
     async def start_listening_display(self, image_path):
-        """Start listening display with enhanced task management"""
         if not self._active:
             return
 
@@ -158,16 +155,13 @@ class DisplayModule:
                 await self.cancel_current_display_task()
 
     async def send_white_frames(self):
-        """Enhanced white frame sending with checks"""
         if self._shutdown_event.is_set() or not self.display_manager:
             return
             
         try:
             white_img = Image.new('RGB', (240, 240), color='white')
-            # Check if display_manager still exists before encoding
             if self.display_manager:
                 encoded_data = self.display_manager.encode_image_to_bytes(white_img)
-                # Check again before sending
                 if self.display_manager:
                     await self.display_manager.send_image(encoded_data)
                     await asyncio.sleep(0.05)
@@ -175,7 +169,6 @@ class DisplayModule:
             display_logger.error(f"Error sending white frames: {e}")
 
     async def stop_listening_display(self):
-        """Stop listening display with enhanced cleanup"""
         if not self._active:
             return
 
@@ -184,12 +177,10 @@ class DisplayModule:
             await self.clear_display()
 
     async def clear_display(self):
-        """Enhanced display clearing method"""
         if not self._active:
             return
 
         try:
-            # Send multiple white frames with short delays
             for _ in range(2):
                 await self.send_white_frames()
                 await asyncio.sleep(0.05)
@@ -197,7 +188,6 @@ class DisplayModule:
             display_logger.error(f"Error clearing display: {e}")
 
     async def _emergency_cleanup(self):
-        """Emergency cleanup for unexpected shutdowns"""
         if not self._is_cleaning:
             self._is_cleaning = True
             try:
@@ -210,17 +200,14 @@ class DisplayModule:
                 self._is_cleaning = False
 
     async def cleanup_display(self):
-        """Enhanced display cleanup with proper sequencing"""
         async with self._cleanup_lock:
             if not self._is_cleaning and self.display_manager:
                 self._is_cleaning = True
-                self._active = False  # Prevent new display tasks
+                self._active = False  
                 
                 try:
-                    # Cancel any ongoing display task first
                     await self.cancel_current_display_task()
                     
-                    # Send final white frames while display_manager is still available
                     if self.display_manager:
                         try:
                             white_img = Image.new('RGB', (240, 240), color='white')
@@ -232,11 +219,9 @@ class DisplayModule:
                         except Exception as e:
                             display_logger.error(f"Error sending final white frames: {e}")
                     
-                    # Store reference to avoid None check issues
                     display_manager = self.display_manager
-                    self.display_manager = None  # Clear reference first
+                    self.display_manager = None  
                     
-                    # Clean up the server if we have a reference
                     if display_manager:
                         try:
                             await asyncio.wait_for(
@@ -260,7 +245,6 @@ class DisplayModule:
             
             self._shutdown_event.set()
             try:
-                # Just set cleanup flag, don't try to cleanup here
                 self._is_cleaning = True
             except Exception as e:
                 display_logger.error(f"Cleanup in destructor failed: {e}")

@@ -39,8 +39,8 @@ class Application:
             # Initialize AI client
             self.ai_client = ConversationClient()
             
-            # Initialize server manager with retry logic
-            self.server_manager = ServerManager("http://192.168.2.1:8080")
+            # Initialize server manager 
+            self.server_manager = ServerManager(SERVER_URL)
             await self.server_manager.initialize()
             
             # Parse arguments
@@ -68,37 +68,6 @@ class Application:
     def setup_arguments(self):
         """Setup command line arguments"""
         parser = argparse.ArgumentParser(description="Speaker Application")
-        
-        # Pico wake word arguments
-        parser.add_argument(
-            '--access_key',
-            help='AccessKey for Porcupine',
-            default=os.environ.get("PICO_ACCESS_KEY")
-        )
-        parser.add_argument(
-            '--keyword_paths',
-            nargs='+',
-            help="Paths to keyword model files",
-            default=[PicoWakeWordKonnichiwa, PicoWakeWordSatoru]
-        )
-        parser.add_argument(
-            '--model_path',
-            help='Path to Porcupine model file',
-            default=PicoLangModel
-        )
-        parser.add_argument(
-            '--sensitivities',
-            nargs='+',
-            help="Sensitivities for keywords",
-            type=float,
-            default=[0.9, 0.9]  # Updated to use higher sensitivity
-        )
-        parser.add_argument(
-            '--gain',
-            type=float,
-            help='Audio gain multiplier',
-            default=5.0
-        )
 
         # Client arguments
         parser.add_argument(
@@ -115,7 +84,6 @@ class Application:
         return parser.parse_args()
 
     async def cleanup(self):
-        """Enhanced cleanup with proper session handling"""
         async with self._cleanup_lock:
             if self._is_shutdown:
                 return
@@ -124,7 +92,6 @@ class Application:
             main_logger.info("Starting application cleanup...")
             
             try:
-                # Close any active aiohttp session first
                 if hasattr(self.server_manager, 'session') and self.server_manager.session:
                     try:
                         await asyncio.wait_for(
@@ -134,7 +101,6 @@ class Application:
                     except Exception as e:
                         main_logger.error(f"Error closing server session: {e}")
 
-                # Clean up components
                 if self.speaker:
                     try:
                         await asyncio.wait_for(self.speaker.cleanup(), timeout=5.0)
@@ -158,24 +124,20 @@ class Application:
             except Exception as e:
                 main_logger.error(f"Error during cleanup: {e}")
             finally:
-                # Force cleanup of all references
                 self.speaker = None
                 self.server_manager = None
                 self.fire_client = None
                 self.schedule_manager = None
                 self.ai_client = None
                 
-                # Wait a moment to ensure all connections are closed
                 await asyncio.sleep(0.5)
                 main_logger.info("Application cleanup completed")
 
     def __del__(self):
-        """Ensure cleanup on deletion"""
         if not self._is_shutdown and asyncio.get_event_loop().is_running():
             asyncio.create_task(self.cleanup())
 
     async def run(self):
-        """Main application run loop"""
         try:
             if self._is_shutdown:
                 return
@@ -197,7 +159,6 @@ class Application:
             await self.cleanup()
 
 def setup_signal_handlers(app):
-    """Enhanced signal handlers"""
     def signal_handler(signum, frame):
         signame = signal.Signals(signum).name
         main_logger.info(f"Received {signame} signal")
@@ -228,7 +189,6 @@ async def main():
 
 if __name__ == '__main__':
     try:
-        # Run the async main function
         asyncio.run(main())
     except KeyboardInterrupt:
         main_logger.info("Application terminated by user")

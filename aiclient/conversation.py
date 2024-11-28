@@ -115,7 +115,6 @@ class ConversationClient:
                         openai_logger.warning(f"Possible no speech detected: {quality_info}")
                         return "音声が検出できませんでした。もう一度お話しください。"
 
-                # Extract and return the transcribed text
                 if hasattr(transcript, 'text'):
                     transcribed_text = transcript.text.strip()
                     return transcribed_text

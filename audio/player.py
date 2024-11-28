@@ -46,7 +46,6 @@ class AudioPlayer:
         self.current_volume = max(0.0, min(1.0, volume))
 
     async def play_audio(self, filename):
-        """Play audio if available"""
         if not self.audio_available:
             print("Audio playback is not available")
             return
@@ -68,22 +67,18 @@ class AudioPlayer:
             data = wf.readframes(chunk_size)
 
             while data and self.playback_active:
-                # Apply volume adjustment
                 if self.current_volume != 1.0:
-                    # Convert bytes to array of integers
                     import array
                     data_array = array.array('h', data)
                     # Apply volume
                     data_array = array.array('h', 
                         (int(x * self.current_volume) for x in data_array))
-                    # Convert back to bytes
                     data = data_array.tobytes()
                 
                 stream.write(data)
                 data = wf.readframes(chunk_size)
                 await asyncio.sleep(0.01)
 
-            # Cleanup
             stream.stop_stream()
             stream.close()
             self.current_stream = None
@@ -148,7 +143,6 @@ class AudioPlayer:
             await self.display.send_white_frames()
 
     def stop_playback(self):
-        """Stop current audio playback"""
         self.playback_active = False
         if self.current_stream and self.audio_available:
             try:
@@ -160,7 +154,6 @@ class AudioPlayer:
                 self.audio_available = False
 
     async def cleanup(self):
-        """Async cleanup method"""
         async with self._cleanup_lock:
             if self.current_stream:
                 try:
@@ -178,7 +171,6 @@ class AudioPlayer:
                     print(f"Error terminating PyAudio: {e}")
 
     def __del__(self):
-        """Ensure cleanup runs"""
         if self.current_stream or self.pyaudio_instance:
             if asyncio.get_event_loop().is_running():
                 asyncio.create_task(self.cleanup())

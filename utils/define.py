@@ -4,6 +4,9 @@ from enum import Enum, auto
 import os
 import pyaudio
 
+# Server URL
+SERVER_URL = "http://192.168.2.1:8080"
+
 # Get the current directory
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 

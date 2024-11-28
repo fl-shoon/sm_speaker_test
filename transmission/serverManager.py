@@ -10,7 +10,7 @@ class ServerManager:
     def __init__(self, address=None):
         self._cleanup_complete = False
         if address is None:
-            self.address = "http://192.168.2.1:8080"  
+            self.address = SERVER_URL
         else:
             self.address = address
         
@@ -44,11 +44,9 @@ class ServerManager:
             raise
         
     async def _cleanup_session(self):
-        """Clean up the aiohttp session with timeout"""
         if self._session and not self._session.closed:
             try:
                 await asyncio.wait_for(self._session.close(), timeout=2.0)
-                # Small delay to ensure connections are closed
                 await asyncio.sleep(0.1)
             except asyncio.TimeoutError:
                 print("Session cleanup timed out")
@@ -59,7 +57,6 @@ class ServerManager:
                 await asyncio.sleep(0.1)
 
     async def cleanup(self):
-        """Enhanced cleanup that prevents further operations"""
         if self._cleanup_complete:
             return
 
@@ -78,7 +75,6 @@ class ServerManager:
             self._cleanup_complete = True
 
     async def show_image(self, encoded_img):
-        """Modified to prevent show after cleanup"""
         if self._cleanup_complete or self._is_shutdown:
             return
         try:
@@ -90,7 +86,6 @@ class ServerManager:
             raise
 
     async def get_buttons(self):
-        """Get button states and detect new presses"""
         try:
             buttons = await self.server.Buttons()
             active = [not self.btn_data[i] and v for i, v in enumerate(buttons)]
