@@ -44,6 +44,9 @@ class PyRecorder:
         with suppress_stdout_stderr():
             self.pyaudio = pyaudio.PyAudio()
 
+        # self.device_error_count = 0
+        # self.max_device_errors = 3
+
     def start_stream(self):
         if self.stream is None or not self.stream.is_active():
             with suppress_stdout_stderr():
@@ -167,8 +170,8 @@ class PyRecorder:
                     return None
 
             try:
-                if self.stream and self.stream.is_active():
-                    self.stream.stop_stream()
+                # if self.stream and self.stream.is_active():
+                #     self.stream.stop_stream()
                 beep_play_task = asyncio.create_task(
                     audio_player.play_audio(self.beep_file)
                 )
