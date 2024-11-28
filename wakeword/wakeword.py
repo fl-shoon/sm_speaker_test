@@ -78,20 +78,8 @@ class WakeWord:
 
             # for wake_word in self.WAKE_WORDS:
             if self.WAKE_WORD in transcribed_text:
-                wakeword_logger.info(f"Wake word detected")
-                try:
-                    if self.audio_stream and self.audio_stream.is_active():
-                        self.audio_stream.stop_stream()
-                    await asyncio.sleep(0.3)  
-
-                    success = await self._play_audio_with_retry(ResponseAudio)
-                    if not success:
-                        wakeword_logger.error("Failed to play response sound after all retries")
-                    await asyncio.sleep(0.3)  
-                    return True
-                finally:
-                    if self.audio_stream and not self.audio_stream.is_active():
-                        self.audio_stream.start_stream()
+                wakeword_logger.info("Wake word detected")
+                return True 
             return False
             
         except KeyboardInterrupt:
@@ -140,12 +128,15 @@ class WakeWord:
     async def check_buttons(self):
         try:
             active_buttons = await self.server.get_buttons()
-            if active_buttons[4]: # RIGHT button
+            wakeword_logger.error(f"Button Result: {active_buttons}")
+            if active_buttons[4]:  # RIGHT button
                 wakeword_logger.info("Right Button Pressed")
+                sensors = await self.server.get_sensors()
+                wakeword_logger.error(f"Sensors Result: {sensors}")
+                await asyncio.sleep(0.1)
                 # response = self.setting_menu.display_menu()
                 # if response:
                 #     return response
-                await asyncio.sleep(0.2)
             return None
         except Exception as e:
             wakeword_logger.error(f"Error in check_buttons: {e}")
