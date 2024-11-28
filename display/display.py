@@ -158,18 +158,19 @@ class DisplayModule:
                 await self.cancel_current_display_task()
 
     async def send_white_frames(self):
-        """Enhanced white frame sending with multiple attempts"""
-        if self._shutdown_event.is_set():
+        """Enhanced white frame sending with checks"""
+        if self._shutdown_event.is_set() or not self.display_manager:
             return
             
         try:
             white_img = Image.new('RGB', (240, 240), color='white')
-            encoded_data = self.display_manager.encode_image_to_bytes(white_img)
-            
-            # Send multiple white frames to ensure display is cleared
-            for _ in range(2):
-                await self.display_manager.send_image(encoded_data)
-                await asyncio.sleep(0.05)
+            # Check if display_manager still exists before encoding
+            if self.display_manager:
+                encoded_data = self.display_manager.encode_image_to_bytes(white_img)
+                # Check again before sending
+                if self.display_manager:
+                    await self.display_manager.send_image(encoded_data)
+                    await asyncio.sleep(0.05)
         except Exception as e:
             display_logger.error(f"Error sending white frames: {e}")
 
@@ -209,25 +210,43 @@ class DisplayModule:
                 self._is_cleaning = False
 
     async def cleanup_display(self):
-        """Enhanced display cleanup"""
+        """Enhanced display cleanup with proper sequencing"""
         async with self._cleanup_lock:
-            if not self._is_cleaning:
+            if not self._is_cleaning and self.display_manager:
                 self._is_cleaning = True
                 self._active = False  # Prevent new display tasks
+                
                 try:
+                    # Cancel any ongoing display task first
                     await self.cancel_current_display_task()
-                    await self.clear_display()
                     
+                    # Send final white frames while display_manager is still available
                     if self.display_manager:
                         try:
+                            white_img = Image.new('RGB', (240, 240), color='white')
+                            encoded_data = self.display_manager.encode_image_to_bytes(white_img)
                             await asyncio.wait_for(
-                                self.display_manager.cleanup_server(),
+                                self.display_manager.send_image(encoded_data),
+                                timeout=1.0
+                            )
+                        except Exception as e:
+                            display_logger.error(f"Error sending final white frames: {e}")
+                    
+                    # Store reference to avoid None check issues
+                    display_manager = self.display_manager
+                    self.display_manager = None  # Clear reference first
+                    
+                    # Clean up the server if we have a reference
+                    if display_manager:
+                        try:
+                            await asyncio.wait_for(
+                                display_manager.cleanup_server(),
                                 timeout=1.0
                             )
                         except asyncio.TimeoutError:
                             display_logger.warning("Display manager cleanup timed out")
-                        finally:
-                            self.display_manager = None
+                        except Exception as e:
+                            display_logger.error(f"Error in display manager cleanup: {e}")
                 finally:
                     self._is_cleaning = False
 

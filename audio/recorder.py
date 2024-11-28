@@ -44,8 +44,8 @@ class PyRecorder:
         with suppress_stdout_stderr():
             self.pyaudio = pyaudio.PyAudio()
 
-        # self.device_error_count = 0
-        # self.max_device_errors = 3
+        self.device_error_count = 0
+        self.max_device_errors = 3
 
     def start_stream(self):
         if self.stream is None or not self.stream.is_active():
@@ -57,10 +57,16 @@ class PyRecorder:
                                           frames_per_buffer=self.CHUNK_SIZE)
 
     def stop_stream(self):
-        if self.stream and self.stream.is_active():
-            self.stream.stop_stream()
-            self.stream.close()
-            self.stream = None
+        """Enhanced stream stopping with error handling"""
+        if self.stream:
+            try:
+                if self.stream.is_active():
+                    self.stream.stop_stream()
+                self.stream.close()
+            except Exception as e:
+                recorder_logger.error(f"Error stopping stream: {e}")
+            finally:
+                self.stream = None
 
     def save_audio(self, frames, filename):
         wf = wave.open(filename, 'wb')
@@ -124,7 +130,16 @@ class PyRecorder:
     async def record_question(self, audio_player):
         tasks = set()
         try:
-            self.start_stream()
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    self.start_stream()
+                    break
+                except Exception as e:
+                    recorder_logger.error(f"Stream start attempt {attempt + 1} failed: {e}")
+                    if attempt == max_retries - 1:
+                        return None
+                    await asyncio.sleep(1)
             recorder_logger.info("Listening... Speak your question.")
 
             frames = []
@@ -156,6 +171,7 @@ class PyRecorder:
                             break
                     elif total_chunks > 5 * self.CHUNKS_PER_SECOND:  
                         recorder_logger.info("No speech detected. Stopping recording.")
+                        self.stop_stream()
                         return None
 
                     if total_chunks > max_duration * self.CHUNKS_PER_SECOND:
@@ -164,23 +180,29 @@ class PyRecorder:
 
                 except (OSError, IOError) as e:
                     recorder_logger.error(f"Stream read error: {e}")
-                    return None
+                    self.device_error_count += 1
+                    if self.device_error_count >= self.max_device_errors:
+                        recorder_logger.error("Too many device errors, forcing cleanup")
+                        self.stop_stream()
+                        return None
+                    continue
                 except Exception as e:
                     recorder_logger.error(f"Unexpected error during recording: {e}")
                     return None
 
-            try:
-                # if self.stream and self.stream.is_active():
-                #     self.stream.stop_stream()
-                beep_play_task = asyncio.create_task(
-                    audio_player.play_audio(self.beep_file)
-                )
-                tasks.add(beep_play_task)
-                await beep_play_task
-            except Exception as e:
-                recorder_logger.error(f"Error playing beep sound: {e}")
-                
-            return b''.join(frames)
+            if frames:
+                try:
+                    if self.stream and self.stream.is_active():
+                        self.stream.stop_stream()
+                    beep_play_task = asyncio.create_task(
+                        audio_player.play_audio(self.beep_file)
+                    )
+                    tasks.add(beep_play_task)
+                    await beep_play_task
+                except Exception as e:
+                    recorder_logger.error(f"Error playing beep sound: {e}")
+
+            return b''.join(frames) if frames else None
 
         except KeyboardInterrupt:
             recorder_logger.info("Recording interrupted by user")
@@ -190,8 +212,7 @@ class PyRecorder:
             return None
         finally:
             try:
-                if self.stream and self.stream.is_active():
-                    self.stream.stop_stream()
+                self.stop_stream()
                 for task in tasks:
                     if not task.done():
                         task.cancel()
@@ -200,7 +221,7 @@ class PyRecorder:
                         except (asyncio.TimeoutError, asyncio.CancelledError):
                             pass
             except Exception as e:
-                recorder_logger.error(f"Error in record question: {e}")
+                recorder_logger.error(f"Error in cleanup: {e}")
 
     def generate_beep_file(self):
         duration = 0.2  # seconds
