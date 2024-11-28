@@ -190,17 +190,49 @@ class PyRecorder:
                     recorder_logger.error(f"Unexpected error during recording: {e}")
                     return None
 
+            # if frames:
+            #     try:
+            #         if self.stream and self.stream.is_active():
+            #             self.stream.stop_stream()
+            #         beep_play_task = asyncio.create_task(
+            #             audio_player.play_audio(self.beep_file)
+            #         )
+            #         tasks.add(beep_play_task)
+            #         await beep_play_task
+            #     except Exception as e:
+            #         recorder_logger.error(f"Error playing beep sound: {e}")
+
+            # return b''.join(frames) if frames else None
             if frames:
                 try:
+                    # Stop recording stream
                     if self.stream and self.stream.is_active():
                         self.stream.stop_stream()
-                    beep_play_task = asyncio.create_task(
-                        audio_player.play_audio(self.beep_file)
-                    )
-                    tasks.add(beep_play_task)
-                    await beep_play_task
+                    await asyncio.sleep(0.1)  
+
+                    # Play beep with retry
+                    for attempt in range(3):
+                        try:
+                            beep_play_task = asyncio.create_task(
+                                audio_player.play_audio(self.beep_file)
+                            )
+                            tasks.add(beep_play_task)
+                            await asyncio.wait_for(beep_play_task, timeout=1.0)
+                            break
+                        except Exception as e:
+                            recorder_logger.error(f"Attempt {attempt + 1} to play beep failed: {e}")
+                            if attempt < 2:  
+                                await asyncio.sleep(0.1)
+
                 except Exception as e:
                     recorder_logger.error(f"Error playing beep sound: {e}")
+                finally:
+                    try:
+                        await asyncio.sleep(0.1)  
+                        if self.stream:
+                            self.stream.start_stream()
+                    except Exception as e:
+                        recorder_logger.error(f"Error restarting stream: {e}")
 
             return b''.join(frames) if frames else None
 

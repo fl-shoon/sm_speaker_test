@@ -205,19 +205,37 @@ class WakeWord:
             button_check_interval = 1.5
             chunks_per_check = int(self.RECORD_SECONDS * self.RATE / self.CHUNK)
             
+            # if self.play_trigger is None:
+            #     if self.audio_stream:
+            #         self.audio_stream.stop_stream()
+
+            #     trigger_task = asyncio.create_task(
+            #         self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
+            #     )
+            #     tasks.add(trigger_task)
+            #     await trigger_task
+            #     self.play_trigger = True
+
+            #     if self.audio_stream:
+            #         self.audio_stream.start_stream()
             if self.play_trigger is None:
-                if self.audio_stream:
-                    self.audio_stream.stop_stream()
+                try:
+                    if self.audio_stream:
+                        self.audio_stream.stop_stream()
+                    await asyncio.sleep(0.1)  
 
-                trigger_task = asyncio.create_task(
-                    self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
-                )
-                tasks.add(trigger_task)
-                await trigger_task
-                self.play_trigger = True
+                    trigger_task = asyncio.create_task(
+                        self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
+                    )
+                    tasks.add(trigger_task)
+                    await trigger_task
+                    self.play_trigger = True
+                    await asyncio.sleep(0.1)  # Wait before restarting stream
 
-                if self.audio_stream:
-                    self.audio_stream.start_stream()
+                    if self.audio_stream:
+                        self.audio_stream.start_stream()
+                except Exception as e:
+                    wakeword_logger.error(f"Error playing trigger sound: {e}")
 
             while not is_exit_event_set():
                 try:
@@ -285,12 +303,27 @@ class WakeWord:
                         try:
                             if self.audio_stream:
                                 self.audio_stream.stop_stream()
+                            await asyncio.sleep(0.1)
 
-                            response_task = asyncio.create_task(
-                                self.audio_player.play_audio(ResponseAudio)
-                            )
-                            tasks.add(response_task)
-                            await asyncio.wait_for(response_task, timeout=2.0)
+                            # response_task = asyncio.create_task(
+                            #     self.audio_player.play_audio(ResponseAudio)
+                            # )
+                            # tasks.add(response_task)
+                            # await asyncio.wait_for(response_task, timeout=2.0)
+                            for attempt in range(3):
+                                try:
+                                    response_task = asyncio.create_task(
+                                        self.audio_player.play_audio(ResponseAudio)
+                                    )
+                                    tasks.add(response_task)
+                                    await asyncio.wait_for(response_task, timeout=2.0)
+                                    break
+                                except Exception as e:
+                                    wakeword_logger.error(f"Attempt {attempt + 1} to play response failed: {e}")
+                                    if attempt < 2:  
+                                        await asyncio.sleep(0.1)
+
+                            await asyncio.sleep(0.1)
                             
                             return True, WakeWordType.TRIGGER
                         except asyncio.TimeoutError:
