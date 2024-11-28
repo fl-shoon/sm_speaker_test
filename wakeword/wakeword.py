@@ -105,7 +105,7 @@ class WakeWord:
                     await asyncio.sleep(0.3)  
 
                     wakeword_logger.info("Playing wake word response sound...")
-                    success = await self.play_audio_with_retry(ResponseAudio)
+                    success = await self._play_audio_with_retry(ResponseAudio)
                     if not success:
                         wakeword_logger.error("Failed to play response sound after all retries")
                     await asyncio.sleep(0.3)  
