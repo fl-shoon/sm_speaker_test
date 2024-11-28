@@ -95,7 +95,7 @@ async def main():
         # If trigger completed and no shutdown requested, start sync task
         if not shutdown_event.is_set() and trigger_task in done:
             sync_task = asyncio.create_task(
-                player.sync_audio_and_gif("audio.wav", "speakingGif.gif")
+                player.sync_audio_and_gif("output.wav", "speakingGif.gif")
             )
             shutdown_wait = asyncio.create_task(shutdown_event.wait())
             
