@@ -106,14 +106,21 @@ class ConversationClient:
                     }
                     # openai_logger.info(f"Transcription quality metrics: {quality_info}")
                     
-                    # Evaluate transcription quality
-                    if segment.avg_logprob < -1.0:
-                        openai_logger.warning(f"Very low confidence transcription detected: {quality_info}")
-                        return "申し訳ありません。音声をはっきりと聞き取れませんでした。もう一度お話しいただけますか？"
-                    
-                    if segment.no_speech_prob > 0.5:
-                        openai_logger.warning(f"Possible no speech detected: {quality_info}")
+                    if segment.no_speech_prob > 0.95:  # Increased from 0.5
+                        openai_logger.warning(f"No speech detected: {quality_info}")
                         return "音声が検出できませんでした。もう一度お話しください。"
+                    
+                    if segment.avg_logprob < -1.5:  
+                        openai_logger.warning(f"Very low confidence transcription: {quality_info}")
+                        return "申し訳ありません。音声をはっきりと聞き取れませんでした。もう一度お話しいただけますか？"
+                    # Evaluate transcription quality
+                    # if segment.avg_logprob < -1.0:
+                    #     openai_logger.warning(f"Very low confidence transcription detected: {quality_info}")
+                    #     return "申し訳ありません。音声をはっきりと聞き取れませんでした。もう一度お話しいただけますか？"
+                    
+                    # if segment.no_speech_prob > 0.5:
+                    #     openai_logger.warning(f"Possible no speech detected: {quality_info}")
+                    #     return "音声が検出できませんでした。もう一度お話しください。"
 
                 if hasattr(transcript, 'text'):
                     transcribed_text = transcript.text.strip()

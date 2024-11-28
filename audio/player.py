@@ -51,42 +51,44 @@ class AudioPlayer:
             return
         
         try:
-            wf = wave.open(filename, "rb")
-            
-            # Create stream
-            stream = self.pyaudio_instance.open(
-                format=self.pyaudio_instance.get_format_from_width(wf.getsampwidth()),
-                channels=wf.getnchannels(),
-                rate=wf.getframerate(),
-                output=True,
-            )
-            self.current_stream = stream
+            self.playback_active = True
 
-            # Play audio in chunks
-            chunk_size = 1024
-            data = wf.readframes(chunk_size)
+            # wf = wave.open(filename, "rb")
+            with wave.open(filename, "rb") as wf:
+                stream = self.pyaudio_instance.open(
+                    format=self.pyaudio_instance.get_format_from_width(wf.getsampwidth()),
+                    channels=wf.getnchannels(),
+                    rate=wf.getframerate(),
+                    output=True,
+                )
+                self.current_stream = stream
 
-            while data and self.playback_active:
-                if self.current_volume != 1.0:
-                    import array
-                    data_array = array.array('h', data)
-                    # Apply volume
-                    data_array = array.array('h', 
-                        (int(x * self.current_volume) for x in data_array))
-                    data = data_array.tobytes()
-                
-                stream.write(data)
+                chunk_size = 1024
                 data = wf.readframes(chunk_size)
-                await asyncio.sleep(0.01)
 
-            stream.stop_stream()
-            stream.close()
-            self.current_stream = None
-            wf.close()
+                while data and self.playback_active:
+                    if self.current_volume != 1.0:
+                        import array
+                        data_array = array.array('h', data)
+                        # Apply volume
+                        data_array = array.array('h', 
+                            (int(x * self.current_volume) for x in data_array))
+                        data = data_array.tobytes()
+                    
+                    stream.write(data)
+                    data = wf.readframes(chunk_size)
+                    await asyncio.sleep(0.01)
+
+                stream.stop_stream()
+                stream.close()
+                self.current_stream = None
+            # wf.close()
             
         except Exception as e:
             print(f"Error playing audio: {e}")
             self.audio_available = False
+        finally:
+            self.playback_active = False
 
     async def check_music_status(self):
         """Check if audio is still playing"""

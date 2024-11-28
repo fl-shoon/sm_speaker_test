@@ -57,40 +57,22 @@ class WakeWord:
                     pass
                 self.pyaudio_instance = None
 
-    async def _play_audio_with_retry(self, audio_file, max_retries=3):
-        success = False
-        stream_was_active = False
-        
-        try:
-            if self.audio_stream:
-                stream_was_active = self.audio_stream.is_active()
-                self.audio_stream.stop_stream()
-                self.audio_stream.close()
-                self.audio_stream = None
-                await asyncio.sleep(0.5)  
-
-            for attempt in range(max_retries):
-                try:
-                    wakeword_logger.info(f"Audio playback attempt {attempt + 1}")
-                    await self.audio_player.play_audio(audio_file)
-                    wakeword_logger.info("Audio playback successful")
-                    success = True
-                    break
-                except Exception as e:
-                    wakeword_logger.error(f"Audio playback attempt {attempt + 1} failed: {e}")
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(0.5)
-
-            await asyncio.sleep(0.5)  
-            return success
-
-        finally:
-            if stream_was_active:
-                try:
-                    self.initialize_pyaudio()
-                    await asyncio.sleep(0.2)
-                except Exception as e:
-                    wakeword_logger.error(f"Error reinitializing stream: {e}")
+    async def _play_audio_with_retry(self, audio_file, max_retries=2):
+        for attempt in range(max_retries):
+            try:
+                wakeword_logger.info(f"Audio playback attempt {attempt + 1}")
+                if self.audio_stream and self.audio_stream.is_active():
+                    self.audio_stream.stop_stream()
+                await asyncio.sleep(0.1)
+                
+                await self.audio_player.play_audio(audio_file)
+                wakeword_logger.info("Audio playback successful")
+                return True
+                
+            except Exception as e:
+                wakeword_logger.error(f"Audio playback error: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(0.1)
     
     async def check_for_wake_word(self, audio_frames):
         try:
@@ -99,35 +81,23 @@ class WakeWord:
             
             transcribed_text = self.ai_client.speech_to_text(temp_file).strip().lower()
 
+            # for wake_word in self.WAKE_WORDS:
             if self.WAKE_WORD in transcribed_text:
                 wakeword_logger.info(f"Wake word detected")
-                success = False
                 try:
+                    if self.audio_stream and self.audio_stream.is_active():
+                        self.audio_stream.stop_stream()
+                    await asyncio.sleep(0.3)  
+
                     wakeword_logger.info("Playing wake word response sound...")
                     success = await self._play_audio_with_retry(ResponseAudio)
                     if not success:
-                        wakeword_logger.error("Failed to play response sound")
-                except Exception as e:
-                    wakeword_logger.error(f"Error playing response sound: {e}")
-                
-                return True
-            # for wake_word in self.WAKE_WORDS:
-            # if self.WAKE_WORD in transcribed_text:
-            #     wakeword_logger.info(f"Wake word detected")
-            #     try:
-            #         if self.audio_stream and self.audio_stream.is_active():
-            #             self.audio_stream.stop_stream()
-            #         await asyncio.sleep(0.3)  
-
-            #         wakeword_logger.info("Playing wake word response sound...")
-            #         success = await self._play_audio_with_retry(ResponseAudio)
-            #         if not success:
-            #             wakeword_logger.error("Failed to play response sound after all retries")
-            #         await asyncio.sleep(0.3)  
-            #         return True
-            #     finally:
-            #         if self.audio_stream and not self.audio_stream.is_active():
-            #             self.audio_stream.start_stream()
+                        wakeword_logger.error("Failed to play response sound after all retries")
+                    await asyncio.sleep(0.3)  
+                    return True
+                finally:
+                    if self.audio_stream and not self.audio_stream.is_active():
+                        self.audio_stream.start_stream()
             return False
             
         except KeyboardInterrupt:
