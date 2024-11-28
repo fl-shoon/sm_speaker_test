@@ -89,6 +89,9 @@ class WakeWord:
             
             return False
             
+        except KeyboardInterrupt:
+            wakeword_logger.info("KeyboardInterrupt received in check_for_wake_word")
+            raise
         except Exception as e:
             wakeword_logger.error(f"Error checking for wake word: {e}")
             return False
@@ -201,146 +204,146 @@ class WakeWord:
             wakeword_logger.error(f"Error in calibration: {e}")
             return frame_bytes
         
-    async def listen_for_wake_word(self, schedule_manager, py_recorder):
-        tasks = set()
-        try:
-            if self.porcupine is None:
-                wakeword_logger.error("PicoVoice not initialized - cannot listen for wake word")
-                return False, WakeWordType.OTHER
+    # async def listen_for_wake_word(self, schedule_manager, py_recorder):
+    #     tasks = set()
+    #     try:
+    #         if self.porcupine is None:
+    #             wakeword_logger.error("PicoVoice not initialized - cannot listen for wake word")
+    #             return False, WakeWordType.OTHER
             
-            if self.audio_stream is None:
-                self.initialize_pyaudio()
-                if self.audio_stream is None:
-                    wakeword_logger.error("Failed to initialize audio stream")
-                    return False, WakeWordType.OTHER
+    #         if self.audio_stream is None:
+    #             self.initialize_pyaudio()
+    #             if self.audio_stream is None:
+    #                 wakeword_logger.error("Failed to initialize audio stream")
+    #                 return False, WakeWordType.OTHER
                 
-            self.initialize_recorder()
+    #         self.initialize_recorder()
 
-            frame_bytes = []
-            calibration_interval = 5
-            last_button_check_time = time.time()
-            last_calibration_time = time.time()
-            button_check_interval = 1.5 # 1.5 -> check buttons every 1.5 seconds
-            detections = -1
+    #         frame_bytes = []
+    #         calibration_interval = 5
+    #         last_button_check_time = time.time()
+    #         last_calibration_time = time.time()
+    #         button_check_interval = 1.5 # 1.5 -> check buttons every 1.5 seconds
+    #         detections = -1
 
-            if self.play_trigger is None:
-                trigger_task = asyncio.create_task(
-                    self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
-                )
-                tasks.add(trigger_task)
-                await trigger_task
-                self.play_trigger = True
+    #         if self.play_trigger is None:
+    #             trigger_task = asyncio.create_task(
+    #                 self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
+    #             )
+    #             tasks.add(trigger_task)
+    #             await trigger_task
+    #             self.play_trigger = True
 
-            while not is_exit_event_set():
-                run_pending()
+    #         while not is_exit_event_set():
+    #             run_pending()
 
-                if schedule_manager and schedule_manager.check_scheduled_conversation():
-                    return True, WakeWordType.SCHEDULE
+    #             if schedule_manager and schedule_manager.check_scheduled_conversation():
+    #                 return True, WakeWordType.SCHEDULE
 
-                try:
-                    audio_data = self.audio_stream.read(self.CHUNK, exception_on_overflow=False)
-                    audio_frame = np.frombuffer(audio_data, dtype=np.int16)
-                    frame_bytes.append(audio_data)
+    #             try:
+    #                 audio_data = self.audio_stream.read(self.CHUNK, exception_on_overflow=False)
+    #                 audio_frame = np.frombuffer(audio_data, dtype=np.int16)
+    #                 frame_bytes.append(audio_data)
 
-                    current_time = time.time()
+    #                 current_time = time.time()
 
-                    if current_time - last_calibration_time >= calibration_interval:
-                        frame_bytes = await self.calibrate_audio(py_recorder, frame_bytes)
-                        last_calibration_time = current_time
+    #                 if current_time - last_calibration_time >= calibration_interval:
+    #                     frame_bytes = await self.calibrate_audio(py_recorder, frame_bytes)
+    #                     last_calibration_time = current_time
 
-                    # Process audio frame for wake word detection
-                    detections = self.porcupine.process(audio_frame)
-                    wake_word_triggered = detections >= 0
+    #                 # Process audio frame for wake word detection
+    #                 detections = self.porcupine.process(audio_frame)
+    #                 wake_word_triggered = detections >= 0
                     
-                    if wake_word_triggered:
-                        wakeword_logger.info("Wake word detected")
-                        response_task = asyncio.create_task(
-                            self.audio_player.play_audio(ResponseAudio)
-                        )
-                        tasks.add(response_task)
-                        await response_task
-                        return True, WakeWordType.TRIGGER
+    #                 if wake_word_triggered:
+    #                     wakeword_logger.info("Wake word detected")
+    #                     response_task = asyncio.create_task(
+    #                         self.audio_player.play_audio(ResponseAudio)
+    #                     )
+    #                     tasks.add(response_task)
+    #                     await response_task
+    #                     return True, WakeWordType.TRIGGER
                     
-                    if current_time - last_button_check_time >= button_check_interval:
-                        button_task = asyncio.create_task(self.check_buttons())
-                        tasks.add(button_task)
-                        res = await button_task
+    #                 if current_time - last_button_check_time >= button_check_interval:
+    #                     button_task = asyncio.create_task(self.check_buttons())
+    #                     tasks.add(button_task)
+    #                     res = await button_task
                         
-                        if res == 'exit':
-                            exit_task = asyncio.create_task(
-                                self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
-                            )
-                            tasks.add(exit_task)
-                            await exit_task
+    #                     if res == 'exit':
+    #                         exit_task = asyncio.create_task(
+    #                             self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
+    #                         )
+    #                         tasks.add(exit_task)
+    #                         await exit_task
                         
-                        last_button_check_time = current_time
+    #                     last_button_check_time = current_time
 
-                    await asyncio.sleep(0.01)
-                except IOError as e:
-                    wakeword_logger.error(f"Error reading audio stream: {e}")
-                    continue
-                # audio_frame = self.pv_recorder.read()
-                # audio_frame_bytes = np.array(audio_frame, dtype=np.int16).tobytes()
-                # frame_bytes.append(audio_frame_bytes)
+    #                 await asyncio.sleep(0.01)
+    #             except IOError as e:
+    #                 wakeword_logger.error(f"Error reading audio stream: {e}")
+    #                 continue
+    #             # audio_frame = self.pv_recorder.read()
+    #             # audio_frame_bytes = np.array(audio_frame, dtype=np.int16).tobytes()
+    #             # frame_bytes.append(audio_frame_bytes)
 
-                # current_time = time.time() # timestamp
+    #             # current_time = time.time() # timestamp
 
-                # if current_time - last_calibration_time >= calibration_interval:
-                #         frame_bytes = await self.calibrate_audio(py_recorder, frame_bytes)
-                #         last_calibration_time = current_time
+    #             # if current_time - last_calibration_time >= calibration_interval:
+    #             #         frame_bytes = await self.calibrate_audio(py_recorder, frame_bytes)
+    #             #         last_calibration_time = current_time
 
-                # detections = self.porcupine.process(audio_frame)
-                # wake_word_triggered = detections >= 0
+    #             # detections = self.porcupine.process(audio_frame)
+    #             # wake_word_triggered = detections >= 0
                 
-                # if wake_word_triggered:
-                #     wakeword_logger.info("Wake word detected")
-                #     response_task = asyncio.create_task(
-                #         self.audio_player.play_audio(ResponseAudio)
-                #     )
-                #     tasks.add(response_task)
-                #     await response_task
-                #     return True, WakeWordType.TRIGGER
+    #             # if wake_word_triggered:
+    #             #     wakeword_logger.info("Wake word detected")
+    #             #     response_task = asyncio.create_task(
+    #             #         self.audio_player.play_audio(ResponseAudio)
+    #             #     )
+    #             #     tasks.add(response_task)
+    #             #     await response_task
+    #             #     return True, WakeWordType.TRIGGER
                 
-                # if current_time - last_button_check_time >= button_check_interval:
-                #         button_task = asyncio.create_task(self.check_buttons())
-                #         tasks.add(button_task)
-                #         res = await button_task
+    #             # if current_time - last_button_check_time >= button_check_interval:
+    #             #         button_task = asyncio.create_task(self.check_buttons())
+    #             #         tasks.add(button_task)
+    #             #         res = await button_task
                         
-                #         if res == 'exit':
-                #             exit_task = asyncio.create_task(
-                #                 self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
-                #             )
-                #             tasks.add(exit_task)
-                #             await exit_task
+    #             #         if res == 'exit':
+    #             #             exit_task = asyncio.create_task(
+    #             #                 self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
+    #             #             )
+    #             #             tasks.add(exit_task)
+    #             #             await exit_task
                         
-                #         last_button_check_time = current_time
+    #             #         last_button_check_time = current_time
 
-                await asyncio.sleep(0.01)
+    #             await asyncio.sleep(0.01)
 
-        except KeyboardInterrupt:
-            return False, WakeWordType.OTHER
-        except Exception as e:
-            wakeword_logger.error(f"Error in wake word detection: {e}")
-            return False, WakeWordType.OTHER
-        finally:
-            # Cancel all tasks first
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-                    try:
-                        await asyncio.wait_for(task, timeout=1.0)
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
-                        pass
+    #     except KeyboardInterrupt:
+    #         return False, WakeWordType.OTHER
+    #     except Exception as e:
+    #         wakeword_logger.error(f"Error in wake word detection: {e}")
+    #         return False, WakeWordType.OTHER
+    #     finally:
+    #         # Cancel all tasks first
+    #         for task in tasks:
+    #             if not task.done():
+    #                 task.cancel()
+    #                 try:
+    #                     await asyncio.wait_for(task, timeout=1.0)
+    #                 except (asyncio.TimeoutError, asyncio.CancelledError):
+    #                     pass
             
-            # Then clean up recorder with timeout
-            try:
-                await asyncio.wait_for(self.cleanup_recorder(), timeout=10.0)
-            except asyncio.TimeoutError:
-                wakeword_logger.error("Recorder cleanup timed out in listen_for_wake_word")
-            except Exception as e:
-                wakeword_logger.error(f"Error during recorder cleanup in listen_for_wake_word: {e}")
+    #         # Then clean up recorder with timeout
+    #         try:
+    #             await asyncio.wait_for(self.cleanup_recorder(), timeout=10.0)
+    #         except asyncio.TimeoutError:
+    #             wakeword_logger.error("Recorder cleanup timed out in listen_for_wake_word")
+    #         except Exception as e:
+    #             wakeword_logger.error(f"Error during recorder cleanup in listen_for_wake_word: {e}")
 
-        return False, None
+    #     return False, None
     
     async def _cleanup_porcupine(self):
         """Separate method for Porcupine cleanup to handle timeouts"""
@@ -445,12 +448,18 @@ class WakeWord:
             chunks_per_check = int(self.RECORD_SECONDS * self.RATE / self.CHUNK)
             
             if self.play_trigger is None:
+                if self.audio_stream:
+                    self.audio_stream.stop_stream()
+
                 trigger_task = asyncio.create_task(
                     self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
                 )
                 tasks.add(trigger_task)
                 await trigger_task
                 self.play_trigger = True
+
+                if self.audio_stream:
+                    self.audio_stream.start_stream()
 
             while not is_exit_event_set():
                 run_pending()
@@ -468,9 +477,16 @@ class WakeWord:
 
                     # Calibrate periodically
                     current_time = time.time()
+                    
                     if current_time - last_calibration_time >= calibration_interval:
+                        if self.audio_stream:
+                            self.audio_stream.stop_stream()
+                        
                         frame_bytes = await self.calibrate_audio(py_recorder, frame_bytes)
                         last_calibration_time = current_time
+
+                        if self.audio_stream:
+                            self.audio_stream.start_stream()
                     
                     # Check buttons periodically
                     if current_time - last_button_check_time >= button_check_interval:
@@ -487,14 +503,26 @@ class WakeWord:
                         
                         last_button_check_time = current_time
 
+                    if is_exit_event_set():
+                        raise KeyboardInterrupt
+                    
                     # Check for wake word
-                    if await self.check_for_wake_word(frames):
-                        response_task = asyncio.create_task(
-                            self.audio_player.play_audio(ResponseAudio)
-                        )
-                        tasks.add(response_task)
-                        await response_task
-                        return True, WakeWordType.TRIGGER
+                    try:
+                        if await self.check_for_wake_word(frames):
+                            if self.audio_stream:
+                                self.audio_stream.stop_stream()
+
+                            response_task = asyncio.create_task(
+                                self.audio_player.play_audio(ResponseAudio)
+                            )
+                            tasks.add(response_task)
+                            await response_task
+                            return True, WakeWordType.TRIGGER
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        wakeword_logger.error(f"Error in wake word detection: {e}")
+                        continue
 
                     # Clear frames for next check
                     frames = []
@@ -505,6 +533,9 @@ class WakeWord:
                     await asyncio.sleep(0.1)
                     continue
 
+        except KeyboardInterrupt:
+            wakeword_logger.info("KeyboardInterrupt received in listen_for_wake_word")
+            return False, WakeWordType.OTHER
         except Exception as e:
             wakeword_logger.error(f"Error in wake word detection: {e}")
             return False, WakeWordType.OTHER
