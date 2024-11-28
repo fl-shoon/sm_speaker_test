@@ -53,7 +53,6 @@ class AudioPlayer:
         try:
             self.playback_active = True
 
-            # wf = wave.open(filename, "rb")
             with wave.open(filename, "rb") as wf:
                 stream = self.pyaudio_instance.open(
                     format=self.pyaudio_instance.get_format_from_width(wf.getsampwidth()),
@@ -82,8 +81,6 @@ class AudioPlayer:
                 stream.stop_stream()
                 stream.close()
                 self.current_stream = None
-            # wf.close()
-            
         except Exception as e:
             print(f"Error playing audio: {e}")
             self.audio_available = False

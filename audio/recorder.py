@@ -47,6 +47,10 @@ class PyRecorder:
         self.device_error_count = 0
         self.max_device_errors = 3
 
+        self.SNR_THRESHOLD = 10  # Signal-to-Noise Ratio threshold
+        self.NOISE_FLOOR = 100   # Minimum noise level to consider
+        self.ENERGY_SCALE = 1.0 # Scale factor for energy values
+
     def start_stream(self):
         if self.stream is None or not self.stream.is_active():
             with suppress_stdout_stderr():
@@ -75,6 +79,20 @@ class PyRecorder:
         wf.writeframes(frames)
         wf.close()
 
+    def butter_bandpass(self, lowcut=300, highcut=3000, fs=16000, order=5):
+        """Create a bandpass filter to focus on speech frequencies"""
+        nyq = 0.5 * fs
+        low = lowcut / nyq
+        high = highcut / nyq
+        b, a = butter(order, [low, high], btype='band')
+        return b, a
+
+    def apply_bandpass_filter(self, data):
+        """Apply bandpass filter to focus on speech frequencies"""
+        b, a = self.butter_bandpass()
+        filtered_data = lfilter(b, a, data)
+        return filtered_data
+    
     def butter_lowpass(self, cutoff, fs, order=5):
         nyq = 0.5 * fs
         normal_cutoff = cutoff / nyq
@@ -87,44 +105,96 @@ class PyRecorder:
         return y
 
     def calibrate_energy_threshold(self, audio_frames):
-        energy_levels = []
-        for frame in audio_frames:
-            audio_chunk = np.frombuffer(frame, dtype=np.int16)
-            filtered_audio = self.butter_lowpass_filter(audio_chunk, cutoff=1000, fs=RATE)
-            energy = np.sum(filtered_audio**2) / len(filtered_audio)
-            energy_levels.append(energy)
+        try:
+            energy_levels = []
+            for frame in audio_frames:
+                audio_chunk = np.frombuffer(frame, dtype=np.int16)
+                # Apply bandpass filter
+                filtered_audio = self.apply_bandpass_filter(audio_chunk)
+                energy = np.sum(filtered_audio**2) / len(filtered_audio)
+                energy_levels.append(energy)
+            
+            # Calculate more robust silence threshold
+            energy_levels = np.array(energy_levels)
+            self.silence_energy = np.median(energy_levels)  # Use median instead of mean
+            
+            # Dynamically adjust multiplier based on noise level
+            if self.silence_energy < 1000:
+                multiplier = 2.0  # Lower threshold for quiet environments
+            elif self.silence_energy < 10000:
+                multiplier = 2.5
+            else:
+                multiplier = 3.0  # Higher threshold for noisy environments
+            
+            self.energy_threshold = self.silence_energy * multiplier
+            recorder_logger.info(f"Calibration complete. Silence energy: {self.silence_energy}, "
+                               f"Threshold: {self.energy_threshold}, Multiplier: {multiplier}")
+            
+        except Exception as e:
+            recorder_logger.error(f"Error in calibration: {e}")
+            # Set default values if calibration fails
+            self.silence_energy = 1000
+            self.energy_threshold = 3000
+    
+    # def calibrate_energy_threshold(self, audio_frames):
+    #     energy_levels = []
+    #     for frame in audio_frames:
+    #         audio_chunk = np.frombuffer(frame, dtype=np.int16)
+    #         filtered_audio = self.butter_lowpass_filter(audio_chunk, cutoff=1000, fs=RATE)
+    #         energy = np.sum(filtered_audio**2) / len(filtered_audio)
+    #         energy_levels.append(energy)
         
-        self.silence_energy = np.mean(energy_levels)
-        multiplier = 3.5
-        '''
-        this value is to adjust the level of voice detection
+    #     self.silence_energy = np.mean(energy_levels)
+    #     multiplier = 3.5
+    #     '''
+    #     this value is to adjust the level of voice detection
 
-        The lower the multiplier value:
+    #     The lower the multiplier value:
 
-        More sensitive to quiet sounds
-        More likely to detect soft speech
-        BUT also more likely to trigger on background noise
-        Result in false stt
+    #     More sensitive to quiet sounds
+    #     More likely to detect soft speech
+    #     BUT also more likely to trigger on background noise
+    #     Result in false stt
 
 
-        The higher the multiplier:
+    #     The higher the multiplier:
 
-        Less sensitive to quiet sounds
-        More resistant to background noise
-        BUT might miss soft speech
+    #     Less sensitive to quiet sounds
+    #     More resistant to background noise
+    #     BUT might miss soft speech
 
-        If speech is not detected, DECREASE the multiplier.
-        '''
-        self.energy_threshold = self.silence_energy * multiplier
-        recorder_logger.info(f"Calibration complete. Silence energy: {self.silence_energy}, Threshold: {self.energy_threshold}")
+    #     If speech is not detected, DECREASE the multiplier.
+    #     '''
+    #     self.energy_threshold = self.silence_energy * multiplier
+    #     recorder_logger.info(f"Calibration complete. Silence energy: {self.silence_energy}, Threshold: {self.energy_threshold}")
     
     def is_speech(self, audio_frame):
         if self.energy_threshold is None:
             return False
-        audio_chunk = np.frombuffer(audio_frame, dtype=np.int16)
-        filtered_audio = self.butter_lowpass_filter(audio_chunk, cutoff=1000, fs=RATE)
-        energy = np.sum(filtered_audio**2) / len(filtered_audio)
-        return energy > self.energy_threshold
+        # audio_chunk = np.frombuffer(audio_frame, dtype=np.int16)
+        # filtered_audio = self.butter_lowpass_filter(audio_chunk, cutoff=1000, fs=RATE)
+        # energy = np.sum(filtered_audio**2) / len(filtered_audio)
+        # return energy > self.energy_threshold
+        try:
+            audio_chunk = np.frombuffer(audio_frame, dtype=np.int16)
+            
+            # Apply bandpass filter for speech frequencies
+            filtered_audio = self.apply_bandpass_filter(audio_chunk)
+            
+            # Calculate signal energy
+            signal_energy = np.sum(filtered_audio**2) / len(filtered_audio)
+            
+            # Calculate SNR
+            noise_floor = max(self.silence_energy, self.NOISE_FLOOR)
+            snr = 10 * np.log10(signal_energy / noise_floor) if noise_floor > 0 else 0
+            
+            # Use both energy threshold and SNR for detection
+            return (signal_energy > self.energy_threshold * self.ENERGY_SCALE and 
+                   snr > self.SNR_THRESHOLD)
+            
+        except Exception as e:
+            recorder_logger.error(f"Error in speech detection: {e}")
+            return False
 
     async def record_question(self, audio_player):
         tasks = set()
@@ -227,24 +297,17 @@ class PyRecorder:
             except Exception as e:
                 recorder_logger.error(f"Error in cleanup: {e}")
 
-    async def _play_beep_with_retry(self, audio_player, max_retries=2):
-        for attempt in range(max_retries):
-            try:
-                recorder_logger.info(f"Beep playback attempt {attempt + 1}")
-                if self.stream and self.stream.is_active():
-                    self.stream.stop_stream()
-                await asyncio.sleep(0.1)
-                
-                await audio_player.play_audio(self.beep_file)
-                recorder_logger.info("Beep playback successful")
-                return True
-                
-            except Exception as e:
-                recorder_logger.error(f"Beep playback error: {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(0.1)
-        
-        return False
+    async def _play_beep_with_retry(self, audio_player):
+        try:
+            recorder_logger.info("Playing beep sound...")
+            if self.stream and self.stream.is_active():
+                self.stream.stop_stream()
+            
+            await audio_player.play_audio(self.beep_file)
+            return True
+        except Exception as e:
+            recorder_logger.error(f"Beep playback error: {e}")
+            return False
     
     def generate_beep_file(self):
         duration = 0.2  # seconds
