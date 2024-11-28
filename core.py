@@ -176,20 +176,16 @@ class SpeakerCore:
         try:
             while conversation_active and not is_exit_event_set():
                 try:
-                    if display_task and not display_task.done():
-                        try:
-                            display_task.cancel()
-                            await asyncio.wait_for(display_task, timeout=1.0)
-                        except (asyncio.TimeoutError, asyncio.CancelledError):
-                            pass
-                    
-                    # Clear display before starting new task
-                    await self.display.send_white_frames()
-                    await asyncio.sleep(0.1)  # Wait for display to clear
-                    
-                    display_task = asyncio.create_task(
-                        self.display.start_listening_display(SatoruHappy)
-                    )
+                    # Start new display task with timeout
+                    try:
+                        display_task = asyncio.create_task(
+                            self.display.start_listening_display(SatoruHappy)
+                        )
+                        await asyncio.wait_for(display_task, timeout=1.0)
+                    except asyncio.TimeoutError:
+                        core_logger.warning("Display start timed out, continuing...")
+                    except Exception as e:
+                        core_logger.error(f"Error starting display: {e}")
                     
                     frames = await self.py_recorder.record_question(audio_player=self.audio_player)
 
@@ -199,31 +195,22 @@ class SpeakerCore:
                             core_logger.info("Maximum silence reached. Ending conversation.")
                             conversation_active = False
                         
-                        # Ensure display task is properly cancelled
-                        if display_task and not display_task.done():
-                            try:
-                                display_task.cancel()
-                                await asyncio.wait_for(display_task, timeout=1.0)
-                                await self.display.stop_listening_display()
-                                await asyncio.sleep(0.1)  # Wait for cleanup
-                            except (asyncio.TimeoutError, asyncio.CancelledError):
-                                core_logger.warning("Display task cancellation timed out")
+                        # Quick cleanup and continue
+                        await self.display.stop_listening_display()
                         continue
 
                     silence_count = 0
                     input_audio_file = AIOutputAudio
                     self.py_recorder.save_audio(frames, input_audio_file)
 
-                    # Cancel display task and stop listening display
-                    if display_task and not display_task.done():
-                        try:
-                            display_task.cancel()
-                            await asyncio.wait_for(display_task, timeout=1.0)
-                        except (asyncio.TimeoutError, asyncio.CancelledError):
-                            core_logger.warning("Display task cancellation timed out")
-
-                    await self.display.stop_listening_display()
-                    await asyncio.sleep(0.1)
+                    # Stop display with timeout
+                    try:
+                        await asyncio.wait_for(
+                            self.display.stop_listening_display(),
+                            timeout=1.0
+                        )
+                    except asyncio.TimeoutError:
+                        core_logger.warning("Display stop timed out")
 
                     try:
                         conversation_ended = await self.ai_client.process_audio(input_audio_file)
@@ -232,12 +219,7 @@ class SpeakerCore:
                     except Exception as e:
                         core_logger.error(f"Error processing conversation: {e}")
                         try:
-                            await self.display.send_white_frames()
-                            await asyncio.sleep(0.1)
-                            error_task = asyncio.create_task(
-                                self.audio_player.sync_audio_and_gif(ErrorAudio, SpeakingGif)
-                            )
-                            await error_task
+                            await self.audio_player.sync_audio_and_gif(ErrorAudio, SpeakingGif)
                         except Exception as play_error:
                             core_logger.error(f"Error playing error audio: {play_error}")
                         conversation_active = False
@@ -246,27 +228,14 @@ class SpeakerCore:
                     core_logger.error(f"Error in conversation loop: {e}")
                     conversation_active = False
 
-        except KeyboardInterrupt:
-            core_logger.info("Conversation interrupted by user")
-        except Exception as e:
-            core_logger.error(f"Critical error in process_conversation: {e}")
         finally:
+            # Final cleanup
             try:
-                if display_task and not display_task.done():
-                    try:
-                        display_task.cancel()
-                        await asyncio.wait_for(display_task, timeout=1.0)
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
-                        core_logger.warning("Final display task cleanup timed out")
-                
-                # Multiple cleanup attempts for display
-                for _ in range(3):
-                    await self.display.send_white_frames()
-                    await asyncio.sleep(0.1)
-                
+                await self.display.stop_listening_display()
+                await asyncio.sleep(0.1)
                 await self.display.fade_in_logo(SeamanLogo)
             except Exception as e:
-                core_logger.error(f"Error in final display cleanup: {e}")
+                core_logger.error(f"Error in final cleanup: {e}")
     # async def process_conversation(self):
     #     conversation_active = True
     #     silence_count = 0

@@ -33,6 +33,7 @@ class DisplayModule:
         self._shutdown_event = asyncio.Event()
         self._current_display_task = None  
         self._transition_lock = asyncio.Lock()
+        self._active = True
 
     def set_player_for_display(self, player):
         self.player = player
@@ -123,23 +124,38 @@ class DisplayModule:
             await self._emergency_cleanup()
             raise
 
-    async def start_listening_display(self, image_path):
-        """Start listening display with proper transition handling"""
-        async with self._transition_lock:
-            # Cancel any existing display task
-            if self._current_display_task and not self._current_display_task.done():
+    async def cancel_current_display_task(self):
+        """Helper method to safely cancel current display task"""
+        if self._current_display_task and not self._current_display_task.done():
+            try:
                 self._current_display_task.cancel()
-                try:
-                    await asyncio.wait_for(self._current_display_task, timeout=1.0)
-                except (asyncio.TimeoutError, asyncio.CancelledError):
-                    pass
-                
-            # Clear display before showing new image
-            await self.send_white_frames()
-            await asyncio.sleep(0.1)  # Wait for display to clear
+                await asyncio.wait_for(self._current_display_task, timeout=0.5)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+            finally:
+                self._current_display_task = None
+
+    async def start_listening_display(self, image_path):
+        """Start listening display with enhanced task management"""
+        if not self._active:
+            return
+
+        async with self._transition_lock:
+            await self.cancel_current_display_task()
             
-            # Set new display task
-            await self.display_image(image_path)
+            # Clear display first
+            await self.clear_display()
+            
+            try:
+                # Create and store new display task
+                self._current_display_task = asyncio.create_task(self.display_image(image_path))
+                await asyncio.wait_for(self._current_display_task, timeout=0.5)
+            except asyncio.TimeoutError:
+                display_logger.warning("Display image timed out")
+                await self.cancel_current_display_task()
+            except Exception as e:
+                display_logger.error(f"Error in start_listening_display: {e}")
+                await self.cancel_current_display_task()
 
     async def send_white_frames(self):
         """Enhanced white frame sending with multiple attempts"""
@@ -158,19 +174,26 @@ class DisplayModule:
             display_logger.error(f"Error sending white frames: {e}")
 
     async def stop_listening_display(self):
-        """Stop listening display with proper cleanup"""
+        """Stop listening display with enhanced cleanup"""
+        if not self._active:
+            return
+
         async with self._transition_lock:
-            if self._current_display_task and not self._current_display_task.done():
-                self._current_display_task.cancel()
-                try:
-                    await asyncio.wait_for(self._current_display_task, timeout=1.0)
-                except (asyncio.TimeoutError, asyncio.CancelledError):
-                    pass
-                
-            # Send multiple white frames to ensure display is cleared
-            for _ in range(3):
+            await self.cancel_current_display_task()
+            await self.clear_display()
+
+    async def clear_display(self):
+        """Enhanced display clearing method"""
+        if not self._active:
+            return
+
+        try:
+            # Send multiple white frames with short delays
+            for _ in range(2):
                 await self.send_white_frames()
                 await asyncio.sleep(0.05)
+        except Exception as e:
+            display_logger.error(f"Error clearing display: {e}")
 
     async def _emergency_cleanup(self):
         """Emergency cleanup for unexpected shutdowns"""
@@ -186,29 +209,24 @@ class DisplayModule:
                 self._is_cleaning = False
 
     async def cleanup_display(self):
-        """Enhanced display cleanup with proper shutdown sequence"""
+        """Enhanced display cleanup"""
         async with self._cleanup_lock:
             if not self._is_cleaning:
                 self._is_cleaning = True
-                self._shutdown_event.set()
+                self._active = False  # Prevent new display tasks
                 try:
-                    # Final white frame attempt
+                    await self.cancel_current_display_task()
+                    await self.clear_display()
+                    
                     if self.display_manager:
                         try:
-                            white_img = Image.new('RGB', (240, 240), color='white')
-                            encoded_data = self.display_manager.encode_image_to_bytes(white_img)
                             await asyncio.wait_for(
-                                self.display_manager.send_image(encoded_data),
+                                self.display_manager.cleanup_server(),
                                 timeout=1.0
                             )
-                        except:
-                            pass
-
-                        # Cleanup server and clear reference
-                        try:
-                            await self.display_manager.cleanup_server()
+                        except asyncio.TimeoutError:
+                            display_logger.warning("Display manager cleanup timed out")
                         finally:
-                            # Important: Set to None to prevent further use
                             self.display_manager = None
                 finally:
                     self._is_cleaning = False
