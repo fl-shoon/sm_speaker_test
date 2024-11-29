@@ -121,7 +121,7 @@ class ServerManager:
         try:
             config = {}
             if backlight is not None:
-                config['backlight'] = max(0, min(100, backlight))
+                config['backlight'] = max(1, min(100, backlight))
             if config:
                 await self.server.LcdConfig(**config)
         except Exception as e:
