@@ -40,30 +40,17 @@ class DisplayModule:
     async def fade_in_logo(self, logo_path):
         try: 
             img = Image.open(logo_path)
-            
-            for i in range(0, 240, 60):
-                img.paste(img.crop((60, 0, 240, 240)), (0, 0))
-                img.paste(img.crop((i, 0, i + 60, 240)), (179, 0))
-                encoded_data = self.display_manager.encode_image_to_bytes(img)
+            base_img = Image.new('RGB', (240, 240), color='white')
+
+            for i in range(240, 0, -60):
+                new_frame = base_img.copy()
+                new_frame.paste(new_frame.crop((0, 0, 180, 240)), (60, 0))
+                new_frame.paste(img.crop((i - 60, 0, i, 240)), (0, 0))
+                
+                encoded_data = self.display_manager.encode_image_to_bytes(new_frame)
                 await self.display_manager.send_image(encoded_data)
-                # await asyncio.sleep(0.01)
-            # for i in range(self.fade_in_steps):
-            #     alpha = int(255 * (i + 1) / self.fade_in_steps)
-            #     current_brightness = self.display_manager.current_brightness * (i + 1) / self.fade_in_steps
+                await asyncio.sleep(0.05)  
 
-            #     faded_img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-            #     faded_img.paste(img, (0, 0))
-            #     faded_img.putalpha(alpha)
-
-            #     rgb_img = Image.new("RGB", faded_img.size, (0, 0, 0))
-            #     rgb_img.paste(faded_img, mask=faded_img.split()[3])
-
-            #     enhancer = ImageEnhance.Brightness(rgb_img)
-            #     brightened_img = enhancer.enhance(current_brightness)
-
-            #     encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
-            #     await self.display_manager.send_image(encoded_data)
-            #     await asyncio.sleep(0.01)
         except Exception as e:
             display_logger.error(f"Error in fade_in_logo: {e}")
             await self._emergency_cleanup()
