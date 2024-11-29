@@ -5,16 +5,20 @@ import numpy as np
 
 class ManageDisplay:
     def __init__(self, server_manger):
-        self.current_brightness = 1.0  
+        # self.current_brightness = 1.0  
+        self.current_brightness = 100  
         self.current_image = None
         self.server = server_manger
 
-    def apply_brightness(self, img):
-        enhancer = ImageEnhance.Brightness(img)
-        return enhancer.enhance(self.current_brightness)
+    async def apply_brightness(self, blacklight):
+        await self.server.LcdConfig(backlight=blacklight)
+        # enhancer = ImageEnhance.Brightness(img)
+        # return enhancer.enhance(self.current_brightness)
     
-    def set_brightness(self, brightness):
-        self.current_brightness = max(0.0, min(1.0, brightness))
+    async def set_brightness(self, brightness):
+        # self.current_brightness = max(0.0, min(1.0, brightness))
+        self.current_brightness = max(1, min(100, brightness))
+        await self.server.LcdConfig(backlight=self.current_brightness)
 
     def frame_to_bytes(self, frame):
         """Convert numpy array frame to hex string"""

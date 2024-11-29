@@ -112,7 +112,8 @@ class DisplayModule:
             if img.size != (240, 240):
                 img = img.resize((240, 240))
 
-            brightened_img = self.display_manager.apply_brightness(img)
+            # brightened_img = self.display_manager.apply_brightness(img)
+            brightened_img = img
 
             encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
             await self.display_manager.send_image(encoded_data)
