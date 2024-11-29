@@ -1,12 +1,10 @@
 from display.setting import SettingMenu
-from openai import OpenAI
 from utils.define import *
 from utils.scheduler import run_pending
 from utils.utils import is_exit_event_set
 
 import asyncio
 import logging
-import numpy as np
 import pyaudio
 import time
 
@@ -14,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 wakeword_logger = logging.getLogger(__name__)
 
 class WakeWord:
-    def __init__(self, args, audio_player):
+    def __init__(self, args, audio_player, display_manager):
         self.audio_player = audio_player
         self.pyaudio_instance = None
         self.audio_stream = None
@@ -32,6 +30,9 @@ class WakeWord:
         
         # self.WAKE_WORDS = ["こんにちは", "聞いて", "お願い"]
         self.WAKE_WORD = "こんにちは"
+
+        self.setting_menu = SettingMenu(audio_player=self.audio_player, display_manager=display_manager)
+
         self.initialize_pyaudio()
 
     def initialize_pyaudio(self):
@@ -128,15 +129,15 @@ class WakeWord:
     async def check_buttons(self):
         try:
             active_buttons = await self.server.get_buttons()
-            wakeword_logger.error(f"Button Result: {active_buttons}")
+            wakeword_logger.info(f"Button Result: {active_buttons}")
             if active_buttons[4]:  # RIGHT button
                 wakeword_logger.info("Right Button Pressed")
-                sensors = await self.server.get_sensors()
-                wakeword_logger.error(f"Sensors Result: {sensors}")
+                # sensors = await self.server.get_sensors()
+                # wakeword_logger.error(f"Sensors Result: {sensors}")
+                response = await self.setting_menu.display_menu()
                 await asyncio.sleep(0.1)
-                # response = self.setting_menu.display_menu()
-                # if response:
-                #     return response
+                if response:
+                    return response
             return None
         except Exception as e:
             wakeword_logger.error(f"Error in check_buttons: {e}")
@@ -263,11 +264,23 @@ class WakeWord:
                             res = await button_task
                             
                             if res == 'exit':
-                                exit_task = asyncio.create_task(
-                                    self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
-                                )
-                                tasks.add(exit_task)
-                                await exit_task
+                                try:
+                                    if self.audio_stream:
+                                        self.audio_stream.stop_stream()
+                                    await asyncio.sleep(0.1)  
+
+                                    exit_task = asyncio.create_task(
+                                        self.audio_player.play_trigger_with_logo(TriggerAudio, SeamanLogo)
+                                    )
+                                    tasks.add(exit_task)
+                                    await exit_task
+                                    self.play_trigger = True
+                                    await asyncio.sleep(0.1)  
+
+                                    if self.audio_stream:
+                                        self.audio_stream.start_stream()
+                                except Exception as e:
+                                    wakeword_logger.error(f"Error at button exit audio and display task: {e}")
                             
                             last_button_check_time = current_time
                         except KeyboardInterrupt:

@@ -47,7 +47,7 @@ class SpeakerCore:
         self.display = DisplayModule(display_manager=self.display_manager)
         self.ai_client.set_display(display=self.display)
         self.audio_player = AudioPlayer(self.display)
-        self.wake_word = WakeWord(args=args, audio_player=self.audio_player)
+        self.wake_word = WakeWord(args=args, audio_player=self.audio_player, display_manager=self.display_manager)
         
         core_logger.info("Speaker Core initialized successfully")
 

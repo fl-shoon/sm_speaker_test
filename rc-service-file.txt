@@ -20,6 +20,15 @@ start_pre() {
     
     # Create required directories if they don't exist
     mkdir -p /root/middleware/sm_speaker_test
+
+    # Restore SSH directory
+    if [ -d "/usr/local/share/seaman/.ssh" ]; then
+        mkdir -p /root/middleware/.ssh
+        cp -r /usr/local/share/seaman/.ssh/* /root/middleware/.ssh/
+        chmod 700 /root/middleware/.ssh
+        chmod 600 /root/middleware/.ssh/id_ed25519
+        chmod 644 /root/middleware/.ssh/id_ed25519.pub
+    fi
     
     # Copy necessary files from a persistent location if needed
     if [ -d "/usr/local/share/seaman/speaker" ]; then

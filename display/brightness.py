@@ -9,9 +9,9 @@ logging.basicConfig(level=logging.INFO)
 brightness_logger = logging.getLogger(__name__)
 
 class SettingBrightness:
-    def __init__(self, serial_module, mcu_module):
-        self.serial_module = serial_module
-        self.input_serial = mcu_module
+    def __init__(self, display_manager):
+        self.serial_module = display_manager
+        self.input_serial = None
         self.background_color = (73, 80, 87)
         self.text_color = (255, 255, 255)
         self.highlight_color = (0, 119, 255)
