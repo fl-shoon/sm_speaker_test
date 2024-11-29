@@ -368,9 +368,6 @@ class SettingMenu:
                     if not hasattr(self, '_original_brightness'):
                         self._original_brightness = self.display_manager.current_brightness
                     await self.display_manager.apply_brightness(preview_value)
-                #     await self.display_manager.apply_brightness(preview_value)
-                #     brightened_img = image
-                # else:
                 brightened_img = image
             elif self.current_state == SettingState.VOLUME:
                 image = await self.create_volume_image(preview_value)

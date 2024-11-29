@@ -103,10 +103,7 @@ class DisplayModule:
             if img.size != (240, 240):
                 img = img.resize((240, 240))
 
-            # brightened_img = self.display_manager.apply_brightness(img)
-            brightened_img = img
-
-            encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
+            encoded_data = self.display_manager.encode_image_to_bytes(img)
             await self.display_manager.send_image(encoded_data)
 
         except Exception as e:
@@ -115,7 +112,6 @@ class DisplayModule:
             raise
 
     async def cancel_current_display_task(self):
-        """Helper method to safely cancel current display task"""
         if self._current_display_task and not self._current_display_task.done():
             try:
                 self._current_display_task.cancel()
@@ -132,11 +128,9 @@ class DisplayModule:
         async with self._transition_lock:
             await self.cancel_current_display_task()
             
-            # Clear display first
             await self.clear_display()
             
             try:
-                # Create and store new display task
                 self._current_display_task = asyncio.create_task(self.display_image(image_path))
                 await asyncio.wait_for(self._current_display_task, timeout=0.5)
             except asyncio.TimeoutError:

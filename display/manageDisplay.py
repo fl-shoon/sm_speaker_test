@@ -5,8 +5,7 @@ import numpy as np
 
 class ManageDisplay:
     def __init__(self, server_manger):
-        # self.current_brightness = 1.0  
-        self.current_brightness = 80  
+        self.current_brightness = 90  
         self.current_image = None
         self.server = server_manger
 
