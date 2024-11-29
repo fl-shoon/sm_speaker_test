@@ -128,13 +128,11 @@ class SettingMenu:
             buttons = await self.display_manager.server.get_buttons()
             
             if buttons[2]:  # UP
-                # temp_brightness = min(1.0, temp_brightness + 0.05)
-                temp_brightness = min(100, temp_brightness + 10)
+                temp_brightness = min(1.0, temp_brightness + 0.05)
                 await self.update_display(preview_value=temp_brightness)
                 await asyncio.sleep(0.2)
             elif buttons[1]:  # DOWN
-                # temp_brightness = max(0.0, temp_brightness - 0.05)
-                temp_brightness = max(1, temp_brightness - 10)
+                temp_brightness = max(0.0, temp_brightness - 0.05)
                 await self.update_display(preview_value=temp_brightness)
                 await asyncio.sleep(0.2)
             elif buttons[0] or buttons[4]:  # RIGHT/CONFIRM
@@ -362,29 +360,22 @@ class SettingMenu:
         async with self._transition_lock:
             if self.current_state == SettingState.MAIN_MENU:
                 image = await self.create_menu_image()
-                # brightened_img = self.display_manager.apply_brightness(image)
                 brightened_img = image
             elif self.current_state == SettingState.BRIGHTNESS:
                 image = await self.create_brightness_image(preview_value)
 
                 if preview_value is not None:
-                    # enhancer = ImageEnhance.Brightness(image)
-                    # brightened_img = enhancer.enhance(preview_value)
                     await self.display_manager.apply_brightness(preview_value)
                     brightened_img = image
                 else:
-                    # brightened_img = self.display_manager.apply_brightness(image)
                     brightened_img = image
             elif self.current_state == SettingState.VOLUME:
                 image = await self.create_volume_image(preview_value)
-                # brightened_img = self.display_manager.apply_brightness(image)
                 brightened_img = image
             else:
                 image = await self.create_menu_image()
-                # brightened_img = self.display_manager.apply_brightness(image)
                 brightened_img = image
 
-            # brightened_img = self.display_manager.apply_brightness(image)
             encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
             await self.display_manager.send_image(encoded_data)
 

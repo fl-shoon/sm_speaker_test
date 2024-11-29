@@ -25,7 +25,7 @@ def suppress_stdout_stderr():
 class DisplayModule:
     def __init__(self, display_manager):
         self.display_manager = display_manager
-        self.fade_in_steps = 7
+        self.fade_in_steps = 10
         self.player = None
         self._cleanup_lock = asyncio.Lock()
         self._is_cleaning = False
@@ -42,23 +42,29 @@ class DisplayModule:
             img = Image.open(logo_path)
             width, height = img.size
             
-            for i in range(self.fade_in_steps):
-                alpha = int(255 * (i + 1) / self.fade_in_steps)
-                current_brightness = self.display_manager.current_brightness * (i + 1) / self.fade_in_steps
-
-                faded_img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-                faded_img.paste(img, (0, 0))
-                faded_img.putalpha(alpha)
-
-                rgb_img = Image.new("RGB", faded_img.size, (0, 0, 0))
-                rgb_img.paste(faded_img, mask=faded_img.split()[3])
-
-                enhancer = ImageEnhance.Brightness(rgb_img)
-                brightened_img = enhancer.enhance(current_brightness)
-
-                encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
+            for i in range(0, 240, 60):
+                img.paste(img.crop((60, 0, 240, 240)), (0, 0))
+                img.paste(next.crop((i, 0, i + 60, 240)), (179, 0))
+                encoded_data = self.display_manager.encode_image_to_bytes(img)
                 await self.display_manager.send_image(encoded_data)
                 await asyncio.sleep(0.01)
+            # for i in range(self.fade_in_steps):
+            #     alpha = int(255 * (i + 1) / self.fade_in_steps)
+            #     current_brightness = self.display_manager.current_brightness * (i + 1) / self.fade_in_steps
+
+            #     faded_img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+            #     faded_img.paste(img, (0, 0))
+            #     faded_img.putalpha(alpha)
+
+            #     rgb_img = Image.new("RGB", faded_img.size, (0, 0, 0))
+            #     rgb_img.paste(faded_img, mask=faded_img.split()[3])
+
+            #     enhancer = ImageEnhance.Brightness(rgb_img)
+            #     brightened_img = enhancer.enhance(current_brightness)
+
+            #     encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
+            #     await self.display_manager.send_image(encoded_data)
+            #     await asyncio.sleep(0.01)
         except Exception as e:
             display_logger.error(f"Error in fade_in_logo: {e}")
             await self._emergency_cleanup()
