@@ -484,7 +484,7 @@ class SettingMenu:
                 y + padding
             ], fill=color, width=3)
 
-    async def create_menu_image(self):
+    async def create_menu_display(self):
         """Create menu UI with improved visuals"""
         image = Image.new('RGB', self.theme.display_size, self.theme.background_color)
         draw = ImageDraw.Draw(image)
