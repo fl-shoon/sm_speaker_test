@@ -1,7 +1,5 @@
-# from display.brightness import SettingBrightness
-# from display.volume import SettingVolume
 from enum import Enum, auto
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 from utils.define import *
 
 import asyncio
@@ -170,49 +168,10 @@ class SettingMenu:
         size = self.theme.icon_size
 
         if icon == 'volume':
-            self._draw_volume_icon(draw, position)
-            # speaker_width = size * 0.4
-            # speaker_height = size * 0.6
-            # speaker_x = x + (size - speaker_width) // 2
-            # speaker_y = y + (size - speaker_height) // 2
-
-            # # Speaker body
-            # draw.polygon([
-            #     (speaker_x, speaker_y + speaker_height * 0.3),
-            #     (speaker_x + speaker_width * 0.6, speaker_y + speaker_height * 0.3),
-            #     (speaker_x + speaker_width, speaker_y),
-            #     (speaker_x + speaker_width, speaker_y + speaker_height),
-            #     (speaker_x + speaker_width * 0.6, speaker_y + speaker_height * 0.7),
-            #     (speaker_x, speaker_y + speaker_height * 0.7)
-            # ], fill=color)
-
-            # # Sound waves
-            # center_x = x + size * 0.7
-            # center_y = y + size // 2
-            # for i in range(3):
-            #     radius = size * (0.15 + i * 0.1)
-            #     draw.arc([
-            #         center_x - radius,
-            #         center_y - radius,
-            #         center_x + radius,
-            #         center_y + radius
-            #     ], start=300, end=60, fill=color, width=2)
+            self._draw_volume_icon(draw, position, color=color)
 
         elif icon == 'brightness':
-            self._draw_brightness_icon(draw, position)
-            # # Brightness icon
-            # center = size // 2
-            # draw.ellipse([x+size*0.17, y+size*0.17, x+size*0.83, y+size*0.83], outline=color, width=2)
-            # draw.pieslice([x+size*0.17, y+size*0.17, x+size*0.83, y+size*0.83], start=90, end=270, fill=color)
-            
-            # # Rays
-            # for i in range(8):
-            #     angle = i * 45
-            #     x1 = x + center + int(size*0.58 * math.cos(math.radians(angle)))
-            #     y1 = y + center + int(size*0.58 * math.sin(math.radians(angle)))
-            #     x2 = x + center + int(size*0.42 * math.cos(math.radians(angle)))
-            #     y2 = y + center + int(size*0.42 * math.sin(math.radians(angle)))
-            #     draw.line([x1, y1, x2, y2], fill=color, width=2)
+            self._draw_brightness_icon(draw, position, color=color)
 
         elif icon == 'character':
             # Character icon 
@@ -334,21 +293,6 @@ class SettingMenu:
 
         return image
 
-    async def update_display(self, preview_value=None):
-        async with self._transition_lock:
-            if self.current_state == SettingState.MAIN_MENU:
-                image = await self.create_menu_image()
-            elif self.current_state == SettingState.BRIGHTNESS:
-                image = await self.create_brightness_image(preview_value)
-            elif self.current_state == SettingState.VOLUME:
-                image = await self.create_volume_image(preview_value)
-            else:
-                image = await self.create_menu_image()
-
-            brightened_img = self.display_manager.apply_brightness(image)
-            encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
-            await self.display_manager.send_image(encoded_data)
-
     async def _draw_navigation(self, draw):
         nav_font = ImageFont.truetype(font=NotoSansFont, size=12)
         
@@ -363,10 +307,9 @@ class SettingMenu:
         draw.text((20, 135), "戻る", font=nav_font, fill=self.theme.text_color)
         draw.text((200, 135), "決定", font=nav_font, fill=self.theme.text_color)
 
-    def _draw_brightness_icon(self, draw, position):
+    def _draw_brightness_icon(self, draw, position, color=(255, 255, 255)):
         x, y = position
         size = self.theme.icon_size
-        color = (255, 255, 255)
 
         # Brightness icon
         center = size // 2
@@ -382,10 +325,9 @@ class SettingMenu:
             y2 = y + center + int(size*0.42 * math.sin(math.radians(angle)))
             draw.line([x1, y1, x2, y2], fill=color, width=2)
 
-    def _draw_volume_icon(self, draw, position):
+    def _draw_volume_icon(self, draw, position, color=(255, 255, 255)):
         x, y = position
         size = self.theme.icon_size
-        color = (255, 255, 255)
         
         speaker_width = size * 0.4
         speaker_height = size * 0.6
@@ -414,6 +356,28 @@ class SettingMenu:
                 center_y + radius
             ], start=300, end=60, fill=color, width=2)
     
+    async def update_display(self, preview_value=None):
+        async with self._transition_lock:
+            if self.current_state == SettingState.MAIN_MENU:
+                image = await self.create_menu_image()
+            elif self.current_state == SettingState.BRIGHTNESS:
+                image = await self.create_brightness_image(preview_value)
+
+                if preview_value is not None:
+                    enhancer = ImageEnhance.Brightness(image)
+                    image = enhancer.enhance(preview_value)
+                else:
+                    brightened_img = self.display_manager.apply_brightness(image)
+            elif self.current_state == SettingState.VOLUME:
+                image = await self.create_volume_image(preview_value)
+                brightened_img = self.display_manager.apply_brightness(image)
+            else:
+                image = await self.create_menu_image()
+
+            # brightened_img = self.display_manager.apply_brightness(image)
+            encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
+            await self.display_manager.send_image(encoded_data)
+
     async def create_brightness_image(self, preview_value=None):
         """Brightness Setting UI"""
         image = Image.new('RGB', self.theme.display_size, self.theme.background_color)
@@ -465,8 +429,8 @@ class SettingMenu:
         text_height = text_bbox[3] - text_bbox[1]
         text_x = value_x + (value_size - text_width) // 2
         text_y = value_y - text_height // 2
-        # vertical_adjustment = -1  
-        # text_y += vertical_adjustment
+        vertical_adjustment = -1  
+        text_y += vertical_adjustment
         draw.text((text_x, text_y - 1), percentage_text, font=percentage_font, fill=self.theme.background_color)
 
         # Draw navigation
@@ -525,8 +489,8 @@ class SettingMenu:
         text_height = text_bbox[3] - text_bbox[1]
         text_x = value_x + (value_size - text_width) // 2
         text_y = value_y - text_height // 2
-        # vertical_adjustment = -1  
-        # text_y += vertical_adjustment
+        vertical_adjustment = -1  
+        text_y += vertical_adjustment
         draw.text((text_x, text_y - 1), percentage_text, font=percentage_font, fill=self.theme.background_color)
 
         # Draw navigation
