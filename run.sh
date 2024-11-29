@@ -99,21 +99,8 @@ print('\nAll required modules are available.')
 "
 source /etc/profile.d/seaman_env.sh
 
-# if [ $? -eq 0 ]; then
-#     # Ensure audio device is ready
-#     fuser -k /dev/snd/* 2>/dev/null || true
-#     sleep 1
-    
-#     python3 main.py &
-#     PYTHON_PID=$!
-#     wait $PYTHON_PID
-# else
-#     echo "Error: Missing required Python modules. Please install them first."
-#     exit 1
-# fi
-
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    echo "Starting AI Speaker System (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+    echo "Starting AI Speaker System..."
     
     run_with_monitoring
     EXIT_CODE=$?
@@ -140,7 +127,7 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
 done
 
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    echo "Maximum retries reached. Exiting..."
+    echo "Failed to load app. Exiting..."
 fi
 
 cleanup
