@@ -56,12 +56,6 @@ class SettingMenu:
         self.current_state = SettingState.MAIN_MENU
         self._transition_lock = asyncio.Lock()
 
-        self.brightness_control = None
-        self.volume_control = None
-
-        # self.brightness_control = SettingBrightness(display_manager=display_manager)
-        # self.volume_control = SettingVolume(display_manager=display_manager, audio_player=audio_player)
-    
     async def _check_buttons(self):
         buttons = await self.display_manager.server.get_buttons()
 
@@ -73,28 +67,22 @@ class SettingMenu:
             self.selected_index = min(len(self.menu_items) - 1, self.selected_index + 1)
             await self.update_display()
             await asyncio.sleep(0.2)
-        elif buttons[0] or buttons[4]:  # Center button or Right button
-            if self.selected_index == 0:  # Volume control
-                # action, new_volume = self.volume_control.run()
-                # if action == 'confirm':
-                #     self.audio_player.set_audio_volume(new_volume)
-                #     setting_logger.info(f"Volume updated to {new_volume:.2f}")
-                # elif action == 'clean':
-                #     setting_logger.info(f"Volume Interrupt...")
-                #     return action
-                # else:
-                #     setting_logger.info("Volume adjustment cancelled")
+        elif buttons[0] or buttons[4]:  # Center/Right button
+            if self.selected_index == 0:  # Volume setting
+                action, new_volume = await self._handle_volume()
+                if action == 'confirm':
+                    self.audio_player.set_audio_volume(new_volume)
+                    setting_logger.info(f"Volume updated to {new_volume:.2f}")
+                else:
+                    setting_logger.info("Volume adjustment cancelled")
                 await self.update_display()
-            if self.selected_index == 1:  # Brightness control
-                # action, new_brightness = self.brightness_control.run()
-                # if action == 'confirm':
-                #     self.serial_module.set_brightness(new_brightness)
-                #     setting_logger.info(f"Brightness updated to {new_brightness:.2f}")
-                # elif action == 'clean':
-                #     setting_logger.info(f"Brightness Interrupt...")
-                #     return action
-                # else:
-                #     setting_logger.info("Brightness adjustment cancelled")
+            if self.selected_index == 1:  # Brightness Setting
+                action, new_brightness = await self._handle_brightness()
+                if action == 'confirm':
+                    self.display_manager.set_brightness(new_brightness)
+                    setting_logger.info(f"Brightness updated to {new_brightness:.2f}")
+                else:
+                    setting_logger.info("Brightness adjustment cancelled")
                 await self.update_display()
             if self.selected_index == 4:  # 終了
                 return 'back'
@@ -104,34 +92,59 @@ class SettingMenu:
         return None
 
     async def _handle_volume(self):
-        """Handle volume adjustment"""
+        """Volume Setting"""
         self.current_state = SettingState.VOLUME
-        action, new_volume = await self.volume_control.run()
-        if action == 'confirm':
-            await self.audio_player.set_volume(new_volume)
-            setting_logger.info(f"Volume updated to {new_volume:.2f}")
-        elif action == 'clean':
-            setting_logger.info("Volume adjustment interrupted")
-            return action
-        
-        self.current_state = SettingState.MAIN_MENU
-        await self.update_display()
-        return None
+        original_volume = self.audio_player.current_volume
+        temp_volume = original_volume
+
+        await self.update_display(preview_value=temp_volume)
+
+        while True:
+            buttons = await self.display_manager.server.get_buttons()
+            
+            if buttons[2]:  # UP
+                temp_volume = min(1.0, temp_volume + 0.05)
+                await self.update_display(preview_value=temp_volume)
+                await asyncio.sleep(0.2)
+            elif buttons[1]:  # DOWN
+                temp_volume = max(0.0, temp_volume - 0.05)
+                await self.update_display(preview_value=temp_volume)
+                await asyncio.sleep(0.2)
+            elif buttons[0] or buttons[4]:  # RIGHT/CONFIRM
+                self.current_state = SettingState.MAIN_MENU
+                return 'confirm', temp_volume
+            elif buttons[3]:  # LEFT/BACK
+                self.current_state = SettingState.MAIN_MENU
+                return 'back', original_volume
+            
+            await asyncio.sleep(0.1)
 
     async def _handle_brightness(self):
-        """Handle brightness adjustment"""
+        """Brightness Setting"""
         self.current_state = SettingState.BRIGHTNESS
-        action, new_brightness = await self.brightness_control.run()
-        if action == 'confirm':
-            await self.display_manager.set_brightness(new_brightness)
-            setting_logger.info(f"Brightness updated to {new_brightness:.2f}")
-        elif action == 'clean':
-            setting_logger.info("Brightness adjustment interrupted")
-            return action
+        original_brightness = self.display_manager.current_brightness
+        temp_brightness = original_brightness
+        await self.update_display(preview_value=temp_brightness)
+
+        while True:
+            buttons = await self.display_manager.server.get_buttons()
             
-        self.current_state = SettingState.MAIN_MENU
-        await self.update_display()
-        return None
+            if buttons[2]:  # UP
+                temp_brightness = min(1.0, temp_brightness + 0.05)
+                await self.update_display(preview_value=temp_brightness)
+                await asyncio.sleep(0.2)
+            elif buttons[1]:  # DOWN
+                temp_brightness = max(0.0, temp_brightness - 0.05)
+                await self.update_display(preview_value=temp_brightness)
+                await asyncio.sleep(0.2)
+            elif buttons[0] or buttons[4]:  # RIGHT/CONFIRM
+                self.current_state = SettingState.MAIN_MENU
+                return 'confirm', temp_brightness
+            elif buttons[3]:  # LEFT/BACK
+                self.current_state = SettingState.MAIN_MENU
+                return 'back', original_brightness
+            
+            await asyncio.sleep(0.1)
 
     async def _handle_character(self):
         """Handle character settings"""
@@ -157,92 +170,74 @@ class SettingMenu:
         size = self.theme.icon_size
 
         if icon == 'volume':
-            speaker_width = size * 0.4
-            speaker_height = size * 0.6
-            speaker_x = x + (size - speaker_width) // 2
-            speaker_y = y + (size - speaker_height) // 2
+            self._draw_volume_icon(draw, position)
+            # speaker_width = size * 0.4
+            # speaker_height = size * 0.6
+            # speaker_x = x + (size - speaker_width) // 2
+            # speaker_y = y + (size - speaker_height) // 2
 
-            # Speaker body
-            draw.polygon([
-                (speaker_x, speaker_y + speaker_height * 0.3),
-                (speaker_x + speaker_width * 0.6, speaker_y + speaker_height * 0.3),
-                (speaker_x + speaker_width, speaker_y),
-                (speaker_x + speaker_width, speaker_y + speaker_height),
-                (speaker_x + speaker_width * 0.6, speaker_y + speaker_height * 0.7),
-                (speaker_x, speaker_y + speaker_height * 0.7)
-            ], fill=color)
+            # # Speaker body
+            # draw.polygon([
+            #     (speaker_x, speaker_y + speaker_height * 0.3),
+            #     (speaker_x + speaker_width * 0.6, speaker_y + speaker_height * 0.3),
+            #     (speaker_x + speaker_width, speaker_y),
+            #     (speaker_x + speaker_width, speaker_y + speaker_height),
+            #     (speaker_x + speaker_width * 0.6, speaker_y + speaker_height * 0.7),
+            #     (speaker_x, speaker_y + speaker_height * 0.7)
+            # ], fill=color)
 
-            # Sound waves
-            center_x = x + size * 0.7
-            center_y = y + size // 2
-            for i in range(3):
-                radius = size * (0.15 + i * 0.1)
-                draw.arc([
-                    center_x - radius,
-                    center_y - radius,
-                    center_x + radius,
-                    center_y + radius
-                ], start=300, end=60, fill=color, width=2)
+            # # Sound waves
+            # center_x = x + size * 0.7
+            # center_y = y + size // 2
+            # for i in range(3):
+            #     radius = size * (0.15 + i * 0.1)
+            #     draw.arc([
+            #         center_x - radius,
+            #         center_y - radius,
+            #         center_x + radius,
+            #         center_y + radius
+            #     ], start=300, end=60, fill=color, width=2)
 
         elif icon == 'brightness':
-            # Brightness icon
-            center = size // 2
-            draw.ellipse([x+size*0.17, y+size*0.17, x+size*0.83, y+size*0.83], outline=color, width=2)
-            draw.pieslice([x+size*0.17, y+size*0.17, x+size*0.83, y+size*0.83], start=90, end=270, fill=color)
+            self._draw_brightness_icon(draw, position)
+            # # Brightness icon
+            # center = size // 2
+            # draw.ellipse([x+size*0.17, y+size*0.17, x+size*0.83, y+size*0.83], outline=color, width=2)
+            # draw.pieslice([x+size*0.17, y+size*0.17, x+size*0.83, y+size*0.83], start=90, end=270, fill=color)
             
-            # Rays
-            for i in range(8):
-                angle = i * 45
-                x1 = x + center + int(size*0.58 * math.cos(math.radians(angle)))
-                y1 = y + center + int(size*0.58 * math.sin(math.radians(angle)))
-                x2 = x + center + int(size*0.42 * math.cos(math.radians(angle)))
-                y2 = y + center + int(size*0.42 * math.sin(math.radians(angle)))
-                draw.line([x1, y1, x2, y2], fill=color, width=2)
+            # # Rays
+            # for i in range(8):
+            #     angle = i * 45
+            #     x1 = x + center + int(size*0.58 * math.cos(math.radians(angle)))
+            #     y1 = y + center + int(size*0.58 * math.sin(math.radians(angle)))
+            #     x2 = x + center + int(size*0.42 * math.cos(math.radians(angle)))
+            #     y2 = y + center + int(size*0.42 * math.sin(math.radians(angle)))
+            #     draw.line([x1, y1, x2, y2], fill=color, width=2)
 
         elif icon == 'character':
-            # Improved character icon
+            # Character icon 
             padding = size * 0.1
-            face_x = x + size // 2
-            face_y = y + size // 2
+            center_x = x + size // 2
+            center_y = y + size // 2
             face_radius = (size - 2 * padding) // 2
-
-            # Face outline with shadow
-            draw.ellipse([
-                x + padding - 1,
-                y + padding - 1,
-                x + size - padding - 1,
-                y + size - padding - 1
-            ], fill=(0, 0, 0, 128))
-            
-            draw.ellipse([
-                x + padding,
-                y + padding,
-                x + size - padding,
-                y + size - padding
-            ], outline=color, width=2)
-
-            # Eyes
+            # Face outline
+            draw.ellipse([x + padding, y + padding, x + size - padding, y + size - padding], outline=color, width=2)
+            # Eyes 
             eye_radius = size * 0.06
             eye_offset = face_radius * 0.35
-            for ex, ey in [(face_x - eye_offset, face_y - eye_offset),
-                          (face_x + eye_offset, face_y - eye_offset)]:
-                draw.ellipse([
-                    ex - eye_radius,
-                    ey - eye_radius,
-                    ex + eye_radius,
-                    ey + eye_radius
-                ], fill=color)
-
-            # Smile
-            smile_y = face_y + face_radius * 0.1
-            smile_width = face_radius * 0.9
-            smile_height = face_radius * 0.7
-            draw.arc([
-                face_x - smile_width/2,
-                smile_y - smile_height/2,
-                face_x + smile_width/2,
-                smile_y + smile_height/2
-            ], start=0, end=180, fill=color, width=2)
+            left_eye_center = (center_x - eye_offset, center_y - eye_offset)
+            right_eye_center = (center_x + eye_offset, center_y - eye_offset)
+            draw.ellipse([left_eye_center[0] - eye_radius, left_eye_center[1] - eye_radius,
+                          left_eye_center[0] + eye_radius, left_eye_center[1] + eye_radius], fill=color)
+            draw.ellipse([right_eye_center[0] - eye_radius, right_eye_center[1] - eye_radius,
+                          right_eye_center[0] + eye_radius, right_eye_center[1] + eye_radius], fill=color)
+            # Smile 
+            smile_y = center_y + face_radius * 0.1  
+            smile_width = face_radius * 0.9  
+            smile_height = face_radius * 0.7  
+            smile_bbox = [center_x - smile_width/2, smile_y - smile_height/2,
+                          center_x + smile_width/2, smile_y + smile_height/2]
+            draw.arc(smile_bbox, start=0, end=180, fill=color, width=2)
 
         elif icon == 'settings':
             # Improved settings gear icon
@@ -284,7 +279,7 @@ class SettingMenu:
             ], fill=self.theme.background_color)
 
         elif icon == 'exit':
-            # Improved exit icon
+            # Exit icon
             padding = size * 0.17
             shadow_offset = 1
 
@@ -316,7 +311,7 @@ class SettingMenu:
                 x + size - padding,
                 y + padding
             ], fill=color, width=3)
-
+    
     async def create_menu_image(self):
         image = Image.new('RGB', self.theme.display_size, self.theme.background_color)
         draw = ImageDraw.Draw(image)
@@ -339,9 +334,16 @@ class SettingMenu:
 
         return image
 
-    async def update_display(self):
+    async def update_display(self, preview_value=None):
         async with self._transition_lock:
-            image = await self.create_menu_image()
+            if self.current_state == SettingState.MAIN_MENU:
+                image = await self.create_menu_image()
+            elif self.current_state == SettingState.BRIGHTNESS:
+                image = await self.create_brightness_image(preview_value)
+            elif self.current_state == SettingState.VOLUME:
+                image = await self.create_volume_image(preview_value)
+            else:
+                image = await self.create_menu_image()
 
             brightened_img = self.display_manager.apply_brightness(image)
             encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
@@ -361,6 +363,177 @@ class SettingMenu:
         draw.text((20, 135), "戻る", font=nav_font, fill=self.theme.text_color)
         draw.text((200, 135), "決定", font=nav_font, fill=self.theme.text_color)
 
+    def _draw_brightness_icon(self, draw, position):
+        x, y = position
+        size = self.theme.icon_size
+        color = (255, 255, 255)
+
+        # Brightness icon
+        center = size // 2
+        draw.ellipse([x+size*0.17, y+size*0.17, x+size*0.83, y+size*0.83], outline=color, width=2)
+        draw.pieslice([x+size*0.17, y+size*0.17, x+size*0.83, y+size*0.83], start=90, end=270, fill=color)
+        
+        # Rays
+        for i in range(8):
+            angle = i * 45
+            x1 = x + center + int(size*0.58 * math.cos(math.radians(angle)))
+            y1 = y + center + int(size*0.58 * math.sin(math.radians(angle)))
+            x2 = x + center + int(size*0.42 * math.cos(math.radians(angle)))
+            y2 = y + center + int(size*0.42 * math.sin(math.radians(angle)))
+            draw.line([x1, y1, x2, y2], fill=color, width=2)
+
+    def _draw_volume_icon(self, draw, position):
+        x, y = position
+        size = self.theme.icon_size
+        color = (255, 255, 255)
+        
+        speaker_width = size * 0.4
+        speaker_height = size * 0.6
+        speaker_x = x + (size - speaker_width) // 2
+        speaker_y = y + (size - speaker_height) // 2
+
+        # Speaker body
+        draw.polygon([
+            (speaker_x, speaker_y + speaker_height * 0.3),
+            (speaker_x + speaker_width * 0.6, speaker_y + speaker_height * 0.3),
+            (speaker_x + speaker_width, speaker_y),
+            (speaker_x + speaker_width, speaker_y + speaker_height),
+            (speaker_x + speaker_width * 0.6, speaker_y + speaker_height * 0.7),
+            (speaker_x, speaker_y + speaker_height * 0.7)
+        ], fill=color)
+
+        # Sound waves
+        center_x = x + size * 0.7
+        center_y = y + size // 2
+        for i in range(3):
+            radius = size * (0.15 + i * 0.1)
+            draw.arc([
+                center_x - radius,
+                center_y - radius,
+                center_x + radius,
+                center_y + radius
+            ], start=300, end=60, fill=color, width=2)
+    
+    async def create_brightness_image(self, preview_value=None):
+        """Brightness Setting UI"""
+        image = Image.new('RGB', self.theme.display_size, self.theme.background_color)
+        draw = ImageDraw.Draw(image)
+
+        current_value = preview_value if preview_value is not None else self.display_manager.current_brightness
+
+        # Draw brightness icon and text
+        icon_x = self.theme.display_size[0] // 2 - self.theme.icon_size // 2
+        icon_y = 20
+        self._draw_brightness_icon(draw, (icon_x, icon_y))
+        
+        small_font = ImageFont.truetype(NotoSansFont, 14)
+        text = "輝度"
+        text_bbox = draw.textbbox((0, 0), text, font=small_font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_x = self.theme.display_size[0] // 2 - text_width // 2
+        draw.text((text_x, icon_y + self.theme.icon_size + 5), text, font=small_font, fill=self.theme.text_color)
+
+        # Draw vertical brightness bar
+        bar_width = 20
+        bar_height = 140
+        bar_x = (self.theme.display_size[0] - bar_width) // 2
+        bar_y = 80
+        draw.rectangle([bar_x, bar_y, bar_x + bar_width, bar_y + bar_height], outline=self.theme.text_color)
+        filled_height = int(bar_height * current_value)
+        draw.rectangle([bar_x, bar_y + bar_height - filled_height, bar_x + bar_width, bar_y + bar_height], 
+                    fill=self.theme.highlight_color)
+
+        # Draw slider
+        slider_width = 30
+        slider_height = 4
+        slider_y = bar_y + bar_height - filled_height - slider_height // 2
+        draw.rectangle([bar_x - (slider_width - bar_width) // 2, slider_y, 
+                    bar_x + bar_width + (slider_width - bar_width) // 2, slider_y + slider_height], 
+                    fill=self.theme.text_color)
+
+        # Draw value in circle
+        value_size = 30
+        value_x = bar_x + bar_width + 20
+        value_y = slider_y + slider_height // 2
+        draw.ellipse([value_x, value_y - value_size//2, value_x + value_size, value_y + value_size//2], 
+                    fill=self.theme.text_color)
+        brightness_percentage = int(current_value * 100)
+        percentage_font = ImageFont.truetype(NotoSansFont, 14)
+        percentage_text = f"{brightness_percentage}"
+        text_bbox = draw.textbbox((0, 0), percentage_text, font=percentage_font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        text_x = value_x + (value_size - text_width) // 2
+        text_y = value_y - text_height // 2
+        # vertical_adjustment = -1  
+        # text_y += vertical_adjustment
+        draw.text((text_x, text_y - 1), percentage_text, font=percentage_font, fill=self.theme.background_color)
+
+        # Draw navigation
+        await self._draw_navigation(draw)
+        
+        return image
+
+    async def create_volume_image(self, preview_value=None):
+        """Volume Setting UI"""
+        image = Image.new('RGB', self.theme.display_size, self.theme.background_color)
+        draw = ImageDraw.Draw(image)
+
+        current_value = preview_value if preview_value is not None else self.audio_player.current_volume
+
+        # Draw volume icon and text
+        icon_x = self.theme.display_size[0] // 2 - self.theme.icon_size // 2
+        icon_y = 20
+        self._draw_volume_icon(draw, (icon_x, icon_y))
+        
+        small_font = ImageFont.truetype(NotoSansFont, 14)
+        text = "音量"
+        text_bbox = draw.textbbox((0, 0), text, font=small_font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_x = self.theme.display_size[0] // 2 - text_width // 2
+        draw.text((text_x, icon_y + self.theme.icon_size + 5), text, font=small_font, fill=self.theme.text_color)
+
+        # Draw vertical volume bar
+        bar_width = 20
+        bar_height = 140
+        bar_x = (self.theme.display_size[0] - bar_width) // 2
+        bar_y = 80
+        draw.rectangle([bar_x, bar_y, bar_x + bar_width, bar_y + bar_height], outline=self.theme.text_color)
+        filled_height = int(bar_height * current_value)
+        draw.rectangle([bar_x, bar_y + bar_height - filled_height, bar_x + bar_width, bar_y + bar_height], 
+                    fill=self.theme.highlight_color)
+
+        # Draw slider
+        slider_width = 30
+        slider_height = 4
+        slider_y = bar_y + bar_height - filled_height - slider_height // 2
+        draw.rectangle([bar_x - (slider_width - bar_width) // 2, slider_y, 
+                    bar_x + bar_width + (slider_width - bar_width) // 2, slider_y + slider_height], 
+                    fill=self.theme.text_color)
+
+        # Draw value in circle
+        value_size = 30
+        value_x = bar_x + bar_width + 20
+        value_y = slider_y + slider_height // 2
+        draw.ellipse([value_x, value_y - value_size//2, value_x + value_size, value_y + value_size//2], 
+                    fill=self.theme.text_color)
+        volume_percentage = int(current_value * 100)
+        percentage_font = ImageFont.truetype(NotoSansFont, 14)
+        percentage_text = f"{volume_percentage}"
+        text_bbox = draw.textbbox((0, 0), percentage_text, font=percentage_font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        text_x = value_x + (value_size - text_width) // 2
+        text_y = value_y - text_height // 2
+        # vertical_adjustment = -1  
+        # text_y += vertical_adjustment
+        draw.text((text_x, text_y - 1), percentage_text, font=percentage_font, fill=self.theme.background_color)
+
+        # Draw navigation
+        await self._draw_navigation(draw)
+        
+        return image
+    
     async def display_menu(self):
         await self.update_display()
         while True:
@@ -368,6 +541,3 @@ class SettingMenu:
             if action == 'back':
                 setting_logger.info("Returning to main app.")
                 return 'exit'
-            if action == 'clean':
-                setting_logger.info("Received keyboard interrupt from actions.")
-                return action
