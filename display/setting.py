@@ -360,12 +360,13 @@ class SettingMenu:
         async with self._transition_lock:
             if self.current_state == SettingState.MAIN_MENU:
                 image = await self.create_menu_image()
+                brightened_img = self.display_manager.apply_brightness(image)
             elif self.current_state == SettingState.BRIGHTNESS:
                 image = await self.create_brightness_image(preview_value)
 
                 if preview_value is not None:
                     enhancer = ImageEnhance.Brightness(image)
-                    image = enhancer.enhance(preview_value)
+                    brightened_img = enhancer.enhance(preview_value)
                 else:
                     brightened_img = self.display_manager.apply_brightness(image)
             elif self.current_state == SettingState.VOLUME:
@@ -373,6 +374,7 @@ class SettingMenu:
                 brightened_img = self.display_manager.apply_brightness(image)
             else:
                 image = await self.create_menu_image()
+                brightened_img = self.display_manager.apply_brightness(image)
 
             # brightened_img = self.display_manager.apply_brightness(image)
             encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
