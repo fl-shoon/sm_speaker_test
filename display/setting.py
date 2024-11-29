@@ -364,11 +364,14 @@ class SettingMenu:
             elif self.current_state == SettingState.BRIGHTNESS:
                 image = await self.create_brightness_image(preview_value)
 
-                if preview_value is not None:
+                if preview_value is not None and preview_value != self.display_manager.current_brightness:
+                    if not hasattr(self, '_original_brightness'):
+                        self._original_brightness = self.display_manager.current_brightness
                     await self.display_manager.apply_brightness(preview_value)
-                    brightened_img = image
-                else:
-                    brightened_img = image
+                #     await self.display_manager.apply_brightness(preview_value)
+                #     brightened_img = image
+                # else:
+                brightened_img = image
             elif self.current_state == SettingState.VOLUME:
                 image = await self.create_volume_image(preview_value)
                 brightened_img = image
@@ -378,6 +381,10 @@ class SettingMenu:
 
             encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
             await self.display_manager.send_image(encoded_data)
+
+            if self.current_state != SettingState.BRIGHTNESS and hasattr(self, '_original_brightness'):
+                await self.display_manager.apply_brightness(self._original_brightness)
+                delattr(self, '_original_brightness')
 
     async def create_brightness_image(self, preview_value=None):
         """Brightness Setting UI"""

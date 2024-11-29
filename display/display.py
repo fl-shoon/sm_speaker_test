@@ -46,7 +46,7 @@ class DisplayModule:
                 img.paste(img.crop((i, 0, i + 60, 240)), (179, 0))
                 encoded_data = self.display_manager.encode_image_to_bytes(img)
                 await self.display_manager.send_image(encoded_data)
-                await asyncio.sleep(0.01)
+                # await asyncio.sleep(0.01)
             # for i in range(self.fade_in_steps):
             #     alpha = int(255 * (i + 1) / self.fade_in_steps)
             #     current_brightness = self.display_manager.current_brightness * (i + 1) / self.fade_in_steps
