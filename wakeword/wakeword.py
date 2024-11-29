@@ -129,7 +129,6 @@ class WakeWord:
     async def check_buttons(self):
         try:
             active_buttons = await self.server.get_buttons()
-            wakeword_logger.info(f"Button Result: {active_buttons}")
             if active_buttons[4]:  # RIGHT button
                 wakeword_logger.info("Right Button Pressed")
                 # sensors = await self.server.get_sensors()
