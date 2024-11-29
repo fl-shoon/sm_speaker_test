@@ -18,7 +18,7 @@ class ManageDisplay:
     async def set_brightness(self, brightness):
         # self.current_brightness = max(0.0, min(1.0, brightness))
         self.current_brightness = max(1, min(100, brightness))
-        await self.server.LcdConfig(backlight=self.current_brightness)
+        await self.server.set_lcd_config(backlight=self.current_brightness)
 
     def frame_to_bytes(self, frame):
         """Convert numpy array frame to hex string"""
