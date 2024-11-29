@@ -510,7 +510,9 @@ class SettingMenu:
         # Draw navigation
         await self._draw_navigation(draw)
 
-        return image
+        brightened_img = self.display_manager.apply_brightness(image)
+        encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
+        await self.display_manager.send_image(encoded_data)
 
     async def _draw_navigation(self, draw):
         """Draw navigation elements"""
