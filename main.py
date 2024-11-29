@@ -1,7 +1,7 @@
 from core import SpeakerCore
 # from fireclient.fireclient import FireClient
 from aiclient.conversation import ConversationClient
-from transmission.serverManager import ServerManager
+from localserver.serverManager import ServerManager
 from utils.define import *
 from utils.scheduler import ScheduleManager
 from utils.utils import set_exit_event, is_exit_event_set

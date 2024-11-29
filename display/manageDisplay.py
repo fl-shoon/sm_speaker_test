@@ -6,12 +6,12 @@ import numpy as np
 class ManageDisplay:
     def __init__(self, server_manger):
         # self.current_brightness = 1.0  
-        self.current_brightness = 100  
+        self.current_brightness = 60  
         self.current_image = None
         self.server = server_manger
 
     async def apply_brightness(self, blacklight):
-        await self.server.LcdConfig(backlight=blacklight)
+        await self.server.set_lcd_config(backlight=blacklight)
         # enhancer = ImageEnhance.Brightness(img)
         # return enhancer.enhance(self.current_brightness)
     
