@@ -40,16 +40,15 @@ class DisplayModule:
     async def fade_in_logo(self, logo_path):
         try: 
             img = Image.open(logo_path)
-            base_img = Image.new('RGB', (240, 240), color='white')
+            frame = Image.new('RGB', (240, 240), color='white')
 
             for i in range(240, 0, -60):
-                new_frame = base_img.copy()
-                new_frame.paste(new_frame.crop((0, 0, 180, 240)), (60, 0))
-                new_frame.paste(img.crop((i - 60, 0, i, 240)), (0, 0))
+                frame.paste(frame.crop((0, 0, 180, 240)), (60, 0))  # Shift existing content
+                frame.paste(img.crop((i - 60, 0, i, 240)), (0, 0))
                 
-                encoded_data = self.display_manager.encode_image_to_bytes(new_frame)
+                encoded_data = self.display_manager.encode_image_to_bytes(frame)
                 await self.display_manager.send_image(encoded_data)
-                await asyncio.sleep(0.05)  
+                await asyncio.sleep(0.05)
 
         except Exception as e:
             display_logger.error(f"Error in fade_in_logo: {e}")
