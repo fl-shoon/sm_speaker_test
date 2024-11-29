@@ -27,7 +27,7 @@ class AudioPlayer:
         self.display.set_player_for_display(self)  
         self.playback_active = False
         self.audio_available = False
-        self.current_volume = 0.9
+        self.current_volume = 0.2
         self.current_stream = None
         self.pyaudio_instance = None
         self._cleanup_lock = asyncio.Lock()
