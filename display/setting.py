@@ -67,15 +67,15 @@ class SettingMenu:
         setting_logger.info(f"buttons: {buttons}")
 
         if buttons[2]:  # UP button
-            self.selected_item = max(0, self.selected_item - 1)
+            self.selected_index = max(0, self.selected_index - 1)
             self.create_menu_display()
             await asyncio.sleep(0.2)
         elif buttons[1]:  # DOWN button
-            self.selected_item = min(len(self.menu_items) - 1, self.selected_item + 1)
+            self.selected_index = min(len(self.menu_items) - 1, self.selected_index + 1)
             self.create_menu_display()
             await asyncio.sleep(0.2)
         elif buttons[0] or buttons[4]:  # Center button or Right button
-            if self.selected_item == 0:  # Volume control
+            if self.selected_index == 0:  # Volume control
                 # action, new_volume = self.volume_control.run()
                 # if action == 'confirm':
                 #     self.audio_player.set_audio_volume(new_volume)
@@ -86,7 +86,7 @@ class SettingMenu:
                 # else:
                 #     setting_logger.info("Volume adjustment cancelled")
                 self.create_menu_display()
-            if self.selected_item == 1:  # Brightness control
+            if self.selected_index == 1:  # Brightness control
                 # action, new_brightness = self.brightness_control.run()
                 # if action == 'confirm':
                 #     self.serial_module.set_brightness(new_brightness)
@@ -97,7 +97,7 @@ class SettingMenu:
                 # else:
                 #     setting_logger.info("Brightness adjustment cancelled")
                 self.create_menu_display()
-            if self.selected_item == 4:  # 終了
+            if self.selected_index == 4:  # 終了
                 return 'back'
         elif buttons[3]:  # LEFT button
             return 'back'
