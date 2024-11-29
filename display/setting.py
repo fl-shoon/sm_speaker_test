@@ -299,8 +299,8 @@ class SettingMenu:
         
         draw.polygon([(20, 120), (30, 110), (30, 130)], fill=self.theme.text_color)  # Left arrow
         draw.polygon([(220, 120), (210, 110), (210, 130)], fill=self.theme.text_color)  # Right arrow
-        draw.text((20, 135), "戻る", font=nav_font, fill=self.text_color)
-        draw.text((200, 135), "決定", font=nav_font, fill=self.text_color)
+        draw.text((20, 135), "戻る", font=nav_font, fill=self.theme.text_color)
+        draw.text((200, 135), "決定", font=nav_font, fill=self.theme.text_color)
 
     async def display_menu(self):
         await self.create_menu_display()
