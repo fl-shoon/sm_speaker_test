@@ -40,11 +40,10 @@ class DisplayModule:
     async def fade_in_logo(self, logo_path):
         try: 
             img = Image.open(logo_path)
-            width, height = img.size
             
             for i in range(0, 240, 60):
                 img.paste(img.crop((60, 0, 240, 240)), (0, 0))
-                img.paste(next.crop((i, 0, i + 60, 240)), (179, 0))
+                img.paste(img.crop((i, 0, i + 60, 240)), (179, 0))
                 encoded_data = self.display_manager.encode_image_to_bytes(img)
                 await self.display_manager.send_image(encoded_data)
                 await asyncio.sleep(0.01)

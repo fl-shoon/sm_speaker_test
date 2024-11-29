@@ -128,11 +128,13 @@ class SettingMenu:
             buttons = await self.display_manager.server.get_buttons()
             
             if buttons[2]:  # UP
-                temp_brightness = min(100, temp_brightness + 5)
+                # temp_brightness = min(1.0, temp_brightness + 0.05)
+                temp_brightness = min(100, temp_brightness + 10)
                 await self.update_display(preview_value=temp_brightness)
                 await asyncio.sleep(0.2)
             elif buttons[1]:  # DOWN
-                temp_brightness = max(1, temp_brightness - 5)
+                # temp_brightness = max(0.0, temp_brightness - 0.05)
+                temp_brightness = max(1, temp_brightness - 10)
                 await self.update_display(preview_value=temp_brightness)
                 await asyncio.sleep(0.2)
             elif buttons[0] or buttons[4]:  # RIGHT/CONFIRM
@@ -360,22 +362,29 @@ class SettingMenu:
         async with self._transition_lock:
             if self.current_state == SettingState.MAIN_MENU:
                 image = await self.create_menu_image()
+                # brightened_img = self.display_manager.apply_brightness(image)
                 brightened_img = image
             elif self.current_state == SettingState.BRIGHTNESS:
                 image = await self.create_brightness_image(preview_value)
 
                 if preview_value is not None:
+                    # enhancer = ImageEnhance.Brightness(image)
+                    # brightened_img = enhancer.enhance(preview_value)
                     await self.display_manager.apply_brightness(preview_value)
                     brightened_img = image
                 else:
+                    # brightened_img = self.display_manager.apply_brightness(image)
                     brightened_img = image
             elif self.current_state == SettingState.VOLUME:
                 image = await self.create_volume_image(preview_value)
+                # brightened_img = self.display_manager.apply_brightness(image)
                 brightened_img = image
             else:
                 image = await self.create_menu_image()
+                # brightened_img = self.display_manager.apply_brightness(image)
                 brightened_img = image
 
+            # brightened_img = self.display_manager.apply_brightness(image)
             encoded_data = self.display_manager.encode_image_to_bytes(brightened_img)
             await self.display_manager.send_image(encoded_data)
 
@@ -404,15 +413,14 @@ class SettingMenu:
         bar_x = (self.theme.display_size[0] - bar_width) // 2
         bar_y = 80
         draw.rectangle([bar_x, bar_y, bar_x + bar_width, bar_y + bar_height], outline=self.theme.text_color)
-        
-        scaled_height = int(bar_height * ((current_value - 1) / 99))  # Adjust for 1-100 range
-        draw.rectangle([bar_x, bar_y + bar_height - scaled_height, bar_x + bar_width, bar_y + bar_height], 
+        filled_height = int(bar_height * current_value)
+        draw.rectangle([bar_x, bar_y + bar_height - filled_height, bar_x + bar_width, bar_y + bar_height], 
                     fill=self.theme.highlight_color)
 
         # Draw slider
         slider_width = 30
         slider_height = 4
-        slider_y = bar_y + bar_height - scaled_height - slider_height // 2
+        slider_y = bar_y + bar_height - filled_height - slider_height // 2
         draw.rectangle([bar_x - (slider_width - bar_width) // 2, slider_y, 
                     bar_x + bar_width + (slider_width - bar_width) // 2, slider_y + slider_height], 
                     fill=self.theme.text_color)
@@ -423,16 +431,16 @@ class SettingMenu:
         value_y = slider_y + slider_height // 2
         draw.ellipse([value_x, value_y - value_size//2, value_x + value_size, value_y + value_size//2], 
                     fill=self.theme.text_color)
-        
+        brightness_percentage = int(current_value * 100)
         percentage_font = ImageFont.truetype(NotoSansFont, 14)
-        percentage_text = f"{int(current_value)}"
+        percentage_text = f"{brightness_percentage}"
         text_bbox = draw.textbbox((0, 0), percentage_text, font=percentage_font)
         text_width = text_bbox[2] - text_bbox[0]
         text_height = text_bbox[3] - text_bbox[1]
         text_x = value_x + (value_size - text_width) // 2
         text_y = value_y - text_height // 2
-        # vertical_adjustment = -1  
-        # text_y += vertical_adjustment
+        vertical_adjustment = -1  
+        text_y += vertical_adjustment
         draw.text((text_x, text_y - 1), percentage_text, font=percentage_font, fill=self.theme.background_color)
 
         # Draw navigation
