@@ -14,12 +14,13 @@ echo "Current directory: $(pwd)"
 export PYTHONPATH="/usr/lib/python3.12/site-packages:$PYTHONPATH"
 
 cleanup() {
-    echo "Starting cleanup process..."
+    echo "Starting cleanup process... (PID: $$)"
     
     if [ ! -z "$PYTHON_PID" ]; then
-        echo "Sending graceful termination signal to Python process..."
+        echo "Sending graceful termination signal to Python process (PID: $PYTHON_PID)..."
         kill -TERM "$PYTHON_PID" 2>/dev/null || true
         
+        # Give Python more time to clean up display and other resources
         echo "Waiting for Python cleanup (max 30 seconds)..."
         for i in {1..30}; do
             if ! kill -0 "$PYTHON_PID" 2>/dev/null; then
@@ -29,17 +30,20 @@ cleanup() {
             sleep 1
         done
         
+        # Only after Python cleanup, handle audio devices
         echo "Cleaning up audio devices..."
         fuser -k /dev/snd/* 2>/dev/null || true
         
         if kill -0 "$PYTHON_PID" 2>/dev/null; then
             echo "Python process still running, forcing termination..."
-            kill -9 "$PYTHON_PID" 2>/dev/null || true
+            kill -9 -"$PYTHON_PID" 2>/dev/null || true  # Note the minus to kill process group
         fi
     fi
     
+    # Remove lock file if it exists
     rm -f /tmp/audio_device.lock
     
+    # Final cleanup of any remaining audio processes
     echo "Final audio cleanup..."
     fuser -k /dev/snd/* 2>/dev/null || true
     pulseaudio --kill 2>/dev/null || true
@@ -48,18 +52,27 @@ cleanup() {
     exit 0
 }
 
+# Set up signal handling with debug output
+trap 'echo "SIGINT received in shell script"; cleanup' SIGINT
+trap 'echo "SIGTERM received in shell script"; cleanup' SIGTERM
+trap 'echo "SIGQUIT received in shell script"; cleanup' SIGQUIT
+
+# Clear any existing audio locks
 rm -f /tmp/audio_device.lock
 fuser -k /dev/snd/* 2>/dev/null || true
 sleep 1
-
-trap cleanup SIGINT SIGTERM SIGQUIT
 
 # Activate virtual environment and verify required modules
 source .venv/bin/activate --system-site-packages
 
 run_with_monitoring() {
+    # Enable job control
+    set -m
+    
+    # Start Python in its own process group
     python3 main.py &
     PYTHON_PID=$!
+    echo "Started Python process with PID: $PYTHON_PID"
     
     # Monitor the Python process
     while kill -0 $PYTHON_PID 2>/dev/null; do
@@ -77,7 +90,7 @@ RETRY_COUNT=0
 echo "Verifying required Python modules..."
 python3 -c "
 import sys
-required_modules = ['pvporcupine', 'pyaudio', 'numpy']
+required_modules = ['openai', 'pyaudio', 'numpy']
 missing_modules = []
 for module in required_modules:
     try:
@@ -91,10 +104,11 @@ if missing_modules:
     sys.exit(1)
 print('\nAll required modules are available.')
 "
+
 source /etc/profile.d/seaman_env.sh
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    echo "Starting AI Speaker System..."
+    echo "Starting AI Speaker System... (Shell PID: $$)"
     
     run_with_monitoring
     EXIT_CODE=$?
