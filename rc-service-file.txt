@@ -16,11 +16,20 @@ depend() {
 start_pre() {
     until curl -si http://localhost:8080 -d '{}' | grep "200 OK"; do sleep 1; done
     
-    mkdir -p /root/middleware/sm_speaker_test/assets/{audio,font,gifs,images,trigger}
+    echo "Checking directory status..."
+    if [ ! -d "/root/middleware/sm_speaker_test" ]; then
+        echo "Directory does not exist, creating..."
+        mkdir -p /root/middleware/sm_speaker_test
+    fi
     
-    if [ ! -d "/root/middleware/sm_speaker_test" ] || [ -z "$(ls -A /root/middleware/sm_speaker_test)" ]; then
+    echo "Checking if directory is empty..."
+    if [ -z "$(ls -A /root/middleware/sm_speaker_test)" ]; then
+        echo "Directory is empty, copying files..."
         mkdir -p /root/middleware/sm_speaker_test/assets/{audio,font,gifs,images,trigger}
         cp -r /media/mmcblk0p1/seaman/speaker/* /root/middleware/sm_speaker_test/
+    else
+        echo "Directory not empty, skipping copy..."
+        ls -la /root/middleware/sm_speaker_test
     fi
     
     chmod -R 755 /root/middleware/sm_speaker_test
@@ -45,7 +54,34 @@ start_pre() {
     fi
 }
 
+stop() {
+    ebegin "Stopping ${RC_SVCNAME}"
+    local pid=$(cat "${pidfile}")
+    echo "Sending SIGTERM to process group: -${pid}"
+    kill -TERM -${pid} 2>/dev/null
+    
+    # Wait for process to handle SIGTERM
+    local timeout=30
+    while [ $timeout -gt 0 ] && kill -0 ${pid} 2>/dev/null; do
+        sleep 1
+        timeout=$((timeout - 1))
+    done
+    
+    # If process still running, force kill
+    if kill -0 ${pid} 2>/dev/null; then
+        echo "Process still running, sending SIGKILL"
+        kill -KILL -${pid}
+    fi
+    
+    eend $?
+}
+
 stop_post() {
+    echo "Running stop_post cleanup..."
+    
+    # Give Python process time to clean up display
+    sleep 2
+    
     # Remove lock file
     rm -f /tmp/audio_device.lock
     
@@ -53,6 +89,8 @@ stop_post() {
     fuser -k /dev/snd/* 2>/dev/null || true
     pulseaudio --kill 2>/dev/null || true
     
-    # Give a moment for cleanup to complete
+    # Final sleep to ensure cleanup completes
     sleep 2
+    
+    echo "Stop_post cleanup completed"
 }

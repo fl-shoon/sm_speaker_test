@@ -21,14 +21,14 @@ cleanup() {
 
         kill -TERM -"$PYTHON_PID" 2>/dev/null || true
         
-        # Give Python more time to clean up display and other resources
         echo "Waiting for Python cleanup (max 30 seconds)..."
         cleanup_timeout=30
         while [ $cleanup_timeout -gt 0 ]; do
             if ! kill -0 "$PYTHON_PID" 2>/dev/null; then
-                echo "Python process finished cleanup"
+                echo "Python process $PYTHON_PID finished cleanup"
                 break
             fi
+            echo "Still waiting for Python process $PYTHON_PID... ($cleanup_timeout seconds left)"
             cleanup_timeout=$((cleanup_timeout - 1))
             sleep 1
         done
@@ -72,13 +72,9 @@ run_with_monitoring() {
     # Enable job control
     set -m
     
-    setsid python3 main.py &
+    python3 main.py &
     PYTHON_PID=$!
-    echo "Started Python process with PID: $PYTHON_PID (in new session)"
-
-    # python3 main.py &
-    # PYTHON_PID=$!
-    # echo "Started Python process with PID: $PYTHON_PID"
+    echo "Started Python process with PID: $PYTHON_PID"
     
     # Monitor the Python process
     while kill -0 $PYTHON_PID 2>/dev/null; do
