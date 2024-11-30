@@ -18,7 +18,11 @@ start_pre() {
     
     mkdir -p /root/middleware/sm_speaker_test/assets/{audio,font,gifs,images,trigger}
     
-    cp -r /media/mmcblk0p1/seaman/speaker/* /root/middleware/sm_speaker_test/
+    if [ ! -d "/root/middleware/sm_speaker_test" ] || [ -z "$(ls -A /root/middleware/sm_speaker_test)" ]; then
+        mkdir -p /root/middleware/sm_speaker_test/assets/{audio,font,gifs,images,trigger}
+        cp -r /media/mmcblk0p1/seaman/speaker/* /root/middleware/sm_speaker_test/
+    fi
+    
     chmod -R 755 /root/middleware/sm_speaker_test
 
     mkdir -p /root/.ssh
