@@ -330,26 +330,35 @@ class WakeWord:
                     continue
                 except KeyboardInterrupt:
                     raise
+                except asyncio.CancelledError:
+                    wakeword_logger.info("Wake word listening cancelled, cleaning up...")
+                    break
                 except Exception as e:
-                    wakeword_logger.error(f"Error in wake word main loop: {e}")
+                    wakeword_logger.error(f"Error in listen for wake word main loop: {e}")
                     await asyncio.sleep(0.1)
 
         except KeyboardInterrupt:
             wakeword_logger.info("KeyboardInterrupt received in listen_for_wake_word")
             return False, WakeWordType.OTHER
+        except asyncio.CancelledError:
+            wakeword_logger.info("Wake word task cancelled, performing cleanup...")
+            return False, WakeWordType.OTHER
         except Exception as e:
             wakeword_logger.error(f"Error in wake word detection: {e}")
             return False, WakeWordType.OTHER
         finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-                    try:
-                        await asyncio.wait_for(task, timeout=1.0)
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
-                        pass
-            
-            await self.cleanup_recorder()
+            try:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                        try:
+                            await asyncio.wait_for(task, timeout=1.0)
+                        except (asyncio.TimeoutError, asyncio.CancelledError):
+                            pass
+                
+                await self.cleanup_recorder()
+            except Exception as e:
+                wakeword_logger.error(f"Error during final cleanup: {e}")
 
         return False, None
 

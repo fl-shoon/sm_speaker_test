@@ -312,45 +312,78 @@ class SpeakerCore:
                     except (asyncio.TimeoutError, asyncio.CancelledError):
                         pass
             
+            cleanup_tasks = []
+        
+            # Add display cleanup tasks
+            if self.display:
+                cleanup_tasks.append(asyncio.create_task(self.display.send_white_frames()))
+                cleanup_tasks.append(asyncio.create_task(self.display.cleanup_display()))
+            
+            # Add wake word cleanup
+            if self.wake_word:
+                cleanup_tasks.append(asyncio.create_task(self.wake_word.cleanup_recorder()))
+            
+            # Add audio player cleanup
+            if self.audio_player:
+                cleanup_tasks.append(asyncio.create_task(self.audio_player.cleanup()))
+            
+            # Wait for all cleanup tasks to complete
+            if cleanup_tasks:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*cleanup_tasks, return_exceptions=True),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    core_logger.error("Some cleanup tasks timed out")
+                except Exception as e:
+                    core_logger.error(f"Error during cleanup tasks: {e}")
+            
+            # Final display cleanup attempt
             if self.display:
                 try:
-                    await asyncio.wait_for(
-                        self.display.send_white_frames(),
-                        timeout=1.0
-                    )
-                    await asyncio.wait_for(
-                        self.display.cleanup_display(),
-                        timeout=2.0
-                    )
+                    await asyncio.wait_for(self.display.send_white_frames(), timeout=2.0)
                 except Exception as e:
-                    core_logger.error(f"Error in display cleanup: {e}")
+                    core_logger.error(f"Final display cleanup attempt failed: {e}")
+            # if self.display:
+            #     try:
+            #         await asyncio.wait_for(
+            #             self.display.send_white_frames(),
+            #             timeout=1.0
+            #         )
+            #         await asyncio.wait_for(
+            #             self.display.cleanup_display(),
+            #             timeout=2.0
+            #         )
+            #     except Exception as e:
+            #         core_logger.error(f"Error in display cleanup: {e}")
             
-            if self.audio_player:
-                try:
-                    await asyncio.wait_for(
-                        self.audio_player.cleanup(),
-                        timeout=2.0
-                    )
-                except Exception as e:
-                    core_logger.error(f"Error cleaning up audio player: {e}")
-                self.audio_player = None
+            # if self.audio_player:
+            #     try:
+            #         await asyncio.wait_for(
+            #             self.audio_player.cleanup(),
+            #             timeout=2.0
+            #         )
+            #     except Exception as e:
+            #         core_logger.error(f"Error cleaning up audio player: {e}")
+            #     self.audio_player = None
 
-            if self.py_recorder:
-                try:
-                    self.py_recorder.stop_stream()
-                except Exception as e:
-                    core_logger.error(f"Error stopping recorder: {e}")
-                self.py_recorder = None
+            # if self.py_recorder:
+            #     try:
+            #         self.py_recorder.stop_stream()
+            #     except Exception as e:
+            #         core_logger.error(f"Error stopping recorder: {e}")
+            #     self.py_recorder = None
 
-            if self.wake_word:
-                try:
-                    await asyncio.wait_for(
-                        self.wake_word.cleanup_recorder(),
-                        timeout=3.0
-                    )
-                except Exception as e:
-                    core_logger.error(f"Error cleaning up wake word: {e}")
-                self.wake_word = None
+            # if self.wake_word:
+            #     try:
+            #         await asyncio.wait_for(
+            #             self.wake_word.cleanup_recorder(),
+            #             timeout=3.0
+            #         )
+            #     except Exception as e:
+            #         core_logger.error(f"Error cleaning up wake word: {e}")
+            #     self.wake_word = None
 
         except Exception as e:
             core_logger.error(f"Error during cleanup: {e}")
