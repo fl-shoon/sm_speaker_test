@@ -82,7 +82,7 @@ class ConversationClient:
 
     def speech_to_text(self, audio_file_path: str) -> str:
         try:
-            openai_logger.info(f"Processing speech audio file: {audio_file_path}")
+            # openai_logger.info(f"Processing speech audio file: {audio_file_path}")
             
             with open(audio_file_path, "rb") as audio_file:
                 transcript = self.client.audio.transcriptions.create(
@@ -104,7 +104,6 @@ class ConversationClient:
                         'no_speech_prob': segment.no_speech_prob,
                         'compression_ratio': segment.compression_ratio
                     }
-                    # openai_logger.info(f"Transcription quality metrics: {quality_info}")
                     
                     if segment.no_speech_prob > 0.95:  # Increased from 0.5
                         openai_logger.warning(f"No speech detected: {quality_info}")
@@ -113,6 +112,7 @@ class ConversationClient:
                     if segment.avg_logprob < -1.5:  
                         openai_logger.warning(f"Very low confidence transcription: {quality_info}")
                         return "申し訳ありません。音声をはっきりと聞き取れませんでした。もう一度お話しいただけますか？"
+                    
                     # Evaluate transcription quality
                     # if segment.avg_logprob < -1.0:
                     #     openai_logger.warning(f"Very low confidence transcription detected: {quality_info}")

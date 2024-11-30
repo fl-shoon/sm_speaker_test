@@ -18,15 +18,18 @@ cleanup() {
     
     if [ ! -z "$PYTHON_PID" ]; then
         echo "Sending graceful termination signal to Python process (PID: $PYTHON_PID)..."
-        kill -TERM "$PYTHON_PID" 2>/dev/null || true
+
+        kill -TERM -"$PYTHON_PID" 2>/dev/null || true
         
         # Give Python more time to clean up display and other resources
         echo "Waiting for Python cleanup (max 30 seconds)..."
-        for i in {1..30}; do
+        cleanup_timeout=30
+        while [ $cleanup_timeout -gt 0 ]; do
             if ! kill -0 "$PYTHON_PID" 2>/dev/null; then
                 echo "Python process finished cleanup"
                 break
             fi
+            cleanup_timeout=$((cleanup_timeout - 1))
             sleep 1
         done
         
@@ -36,7 +39,8 @@ cleanup() {
         
         if kill -0 "$PYTHON_PID" 2>/dev/null; then
             echo "Python process still running, forcing termination..."
-            kill -9 -"$PYTHON_PID" 2>/dev/null || true  # Note the minus to kill process group
+            kill -9 -"$PYTHON_PID" 2>/dev/null || true  
+            sleep 1
         fi
     fi
     
@@ -52,7 +56,6 @@ cleanup() {
     exit 0
 }
 
-# Set up signal handling with debug output
 trap 'echo "SIGINT received in shell script"; cleanup' SIGINT
 trap 'echo "SIGTERM received in shell script"; cleanup' SIGTERM
 trap 'echo "SIGQUIT received in shell script"; cleanup' SIGQUIT
@@ -69,10 +72,13 @@ run_with_monitoring() {
     # Enable job control
     set -m
     
-    # Start Python in its own process group
-    python3 main.py &
+    setsid python3 main.py &
     PYTHON_PID=$!
-    echo "Started Python process with PID: $PYTHON_PID"
+    echo "Started Python process with PID: $PYTHON_PID (in new session)"
+
+    # python3 main.py &
+    # PYTHON_PID=$!
+    # echo "Started Python process with PID: $PYTHON_PID"
     
     # Monitor the Python process
     while kill -0 $PYTHON_PID 2>/dev/null; do
