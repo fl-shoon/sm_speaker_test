@@ -8,38 +8,36 @@ pidfile="/run/$RC_SVCNAME.pid"
 command_background="yes"
 directory="/root/middleware/sm_speaker_test"
 
-# Required services
 depend() {
     need net seaman-daemon
     after bootmisc
 }
 
 start_pre() {
-    # Wait for seaman-daemon to be ready
     until curl -si http://localhost:8080 -d '{}' | grep "200 OK"; do sleep 1; done
     
-    # Create required directories if they don't exist
-    mkdir -p /root/middleware/sm_speaker_test
+    mkdir -p /root/middleware/sm_speaker_test/assets/{audio,font,gifs,images,trigger}
+    
+    cp -r /media/mmcblk0p1/seaman/speaker/* /root/middleware/sm_speaker_test/
+    chmod -R 755 /root/middleware/sm_speaker_test
 
-    # Restore SSH directory
-    if [ -d "/usr/local/share/seaman/.ssh" ]; then
+    mkdir -p /root/.ssh
+    cp -r /media/mmcblk0p1/seaman/.ssh/* /root/.ssh/
+    chmod 700 /root/.ssh
+    chmod 600 /root/.ssh/id_ed25519
+    chmod 644 /root/.ssh/id_ed25519.pub
+
+    # Create and setup venv
+    python3 -m venv /root/middleware/sm_speaker_test/.venv
+    source /root/middleware/sm_speaker_test/.venv/bin/activate
+    pip install --no-cache-dir schedule openai numpy google-cloud pyaudio
+    
+    if [ -d "/media/mmcblk0p1/seaman/.ssh" ]; then
         mkdir -p /root/middleware/.ssh
-        cp -r /usr/local/share/seaman/.ssh/* /root/middleware/.ssh/
+        cp -r /media/mmcblk0p1/seaman/.ssh/* /root/middleware/.ssh/
         chmod 700 /root/middleware/.ssh
         chmod 600 /root/middleware/.ssh/id_ed25519
         chmod 644 /root/middleware/.ssh/id_ed25519.pub
-    fi
-    
-    # Copy necessary files from a persistent location if needed
-    if [ -d "/usr/local/share/seaman/speaker" ]; then
-        cp -r /usr/local/share/seaman/speaker/* /root/middleware/sm_speaker_test/
-    fi
-    
-    # Ensure virtual environment exists
-    if [ ! -d "/root/middleware/sm_speaker_test/.venv" ]; then
-        python3 -m venv /root/middleware/sm_speaker_test/.venv
-        source /root/middleware/sm_speaker_test/.venv/bin/activate
-        # pip install pvporcupine pyaudio numpy
     fi
 }
 

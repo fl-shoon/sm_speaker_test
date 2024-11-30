@@ -16,20 +16,13 @@ export PYTHONPATH="/usr/lib/python3.12/site-packages:$PYTHONPATH"
 cleanup() {
     echo "Starting cleanup process..."
     
-    # Kill any processes using audio devices first
-    echo "Cleaning up audio devices..."
-    fuser -k /dev/snd/* 2>/dev/null || true
-    
-    # Remove lock file if it exists
-    rm -f /tmp/audio_device.lock
-    
     if [ ! -z "$PYTHON_PID" ]; then
-        echo "Sending termination signal to Python process..."
+        echo "Sending graceful termination signal to Python process..."
         kill -TERM "$PYTHON_PID" 2>/dev/null || true
         
-        # Give Python time to clean up
-        echo "Waiting for Python cleanup (max 10 seconds)..."
-        for i in {1..10}; do
+        # Give Python more time to clean up display and other resources
+        echo "Waiting for Python cleanup (max 30 seconds)..."
+        for i in {1..30}; do
             if ! kill -0 "$PYTHON_PID" 2>/dev/null; then
                 echo "Python process finished cleanup"
                 break
@@ -37,12 +30,19 @@ cleanup() {
             sleep 1
         done
         
-        # Force kill if still running
+        # Only after Python cleanup, handle audio devices
+        echo "Cleaning up audio devices..."
+        fuser -k /dev/snd/* 2>/dev/null || true
+        
+        # If Python is still running after timeout, force kill
         if kill -0 "$PYTHON_PID" 2>/dev/null; then
             echo "Python process still running, forcing termination..."
             kill -9 "$PYTHON_PID" 2>/dev/null || true
         fi
     fi
+    
+    # Remove lock file if it exists
+    rm -f /tmp/audio_device.lock
     
     # Final cleanup of any remaining audio processes
     echo "Final audio cleanup..."
