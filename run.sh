@@ -20,7 +20,6 @@ cleanup() {
         echo "Sending graceful termination signal to Python process..."
         kill -TERM "$PYTHON_PID" 2>/dev/null || true
         
-        # Give Python more time to clean up display and other resources
         echo "Waiting for Python cleanup (max 30 seconds)..."
         for i in {1..30}; do
             if ! kill -0 "$PYTHON_PID" 2>/dev/null; then
@@ -30,21 +29,17 @@ cleanup() {
             sleep 1
         done
         
-        # Only after Python cleanup, handle audio devices
         echo "Cleaning up audio devices..."
         fuser -k /dev/snd/* 2>/dev/null || true
         
-        # If Python is still running after timeout, force kill
         if kill -0 "$PYTHON_PID" 2>/dev/null; then
             echo "Python process still running, forcing termination..."
             kill -9 "$PYTHON_PID" 2>/dev/null || true
         fi
     fi
     
-    # Remove lock file if it exists
     rm -f /tmp/audio_device.lock
     
-    # Final cleanup of any remaining audio processes
     echo "Final audio cleanup..."
     fuser -k /dev/snd/* 2>/dev/null || true
     pulseaudio --kill 2>/dev/null || true
@@ -53,7 +48,6 @@ cleanup() {
     exit 0
 }
 
-# Clear any existing audio locks
 rm -f /tmp/audio_device.lock
 fuser -k /dev/snd/* 2>/dev/null || true
 sleep 1

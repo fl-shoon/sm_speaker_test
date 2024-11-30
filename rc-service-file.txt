@@ -42,5 +42,13 @@ start_pre() {
 }
 
 stop_post() {
+    # Remove lock file
     rm -f /tmp/audio_device.lock
+    
+    # Clean up any remaining audio processes
+    fuser -k /dev/snd/* 2>/dev/null || true
+    pulseaudio --kill 2>/dev/null || true
+    
+    # Give a moment for cleanup to complete
+    sleep 2
 }
